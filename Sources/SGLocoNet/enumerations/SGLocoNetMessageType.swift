@@ -355,7 +355,7 @@ public enum SGLocoNetMessageType: CaseIterable, Sendable {
     .trkShortRep             : String(localized: "Track Short Report"),
     .unlinkSlotsP1           : String(localized: "Unlink Slots (P1)"),
     .unlinkSlotsP2           : String(localized: "Unlink Slots (P2)"),
-    .zapped                  : String(localized: "Zapped"),
+    .zapped                  : String(localized:  "Zapped"),
   ]
   
 }

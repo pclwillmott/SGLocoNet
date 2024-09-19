@@ -32,7 +32,7 @@
 
 import Foundation
 
-public class SGLocoNetInterface : NSObject {
+public class SGLocoNetInterface : NSObject   {
   
   // MARK: Private Properties
   

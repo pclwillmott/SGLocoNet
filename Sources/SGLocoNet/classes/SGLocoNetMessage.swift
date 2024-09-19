@@ -2246,7 +2246,7 @@ public class SGLocoNetMessage : NSObject {
     return nil
   }
 
-  public var direction : LocomotiveDirection? {
+  public var direction : LocomotiveDirection?   {
     let directionMask : UInt8 = 0b00100000
     switch messageType {
     case .locoSlotDataP1:
