@@ -32,17 +32,118 @@
 
 import Foundation
 
+private enum SGLocoNetInterfaceState {
+
+  // MARK: Enumeration
+  
+  case idle
+  case sendingMessage
+  case waitingForIMMPacketAck
+  case waitingForSetSwAck
+  
+}
+
 public class SGLocoNetInterface : NSObject   {
   
   // MARK: Private Properties
   
   private var buffer : [UInt8] = []
   
+  private var lastTimeStamp : TimeInterval = 0.0
+  
+  private var observers : [ObjectIdentifier:SGLocoNetInterfaceObserver] = [:]
+
+  private var queue : [SGLocoNetMessage] = []
+  
+  private var sending : SGLocoNetMessage?
+  
+  private var timeoutTimer : Timer?
+  
+  private var retryCount = 0
+  
+  private var state : SGLocoNetInterfaceState = .idle
+
   // MARK: Public Properties
   
-  public var delegate : SGLocoNetInterfaceDelegate?
+  public weak var delegate : SGLocoNetInterfaceDelegate?
   
+  // MARK: Private Methods
+  
+  private func sendNext() {
+    
+    guard let delegate else {
+      state = .idle
+      queue.removeAll()
+      return
+    }
+    
+    guard sending == nil, !queue.isEmpty else {
+      return
+    }
+    
+    sending = queue.removeFirst()
+    
+    if let sending {
+      state = .sendingMessage
+      retryCount = 10
+      startTimeoutTimer(numberOfBytes: sending.message.count)
+      delegate.sendData?(interface: self, data: sending.message)
+    }
+
+  }
+  
+  internal func addToQueue(message:SGLocoNetMessage) {
+    queue.append(message)
+    sendNext()
+  }
+  
+  @objc func timeoutTimerAction() {
+    
+    if let sending {
+      
+      switch state {
+      case .waitingForIMMPacketAck, .waitingForSetSwAck, .sendingMessage:
+        if retryCount < 0 {
+          state = .idle
+          self.sending = nil
+          sendNext()
+        }
+        else {
+          state = .sendingMessage
+          retryCount -= 1
+          startTimeoutTimer(numberOfBytes: sending.message.count)
+          delegate?.sendData?(interface: self, data: sending.message)
+        }
+      default:
+        state = .idle
+        self.sending = nil
+        sendNext()
+      }
+      
+    }
+    
+  }
+  
+  private func startTimeoutTimer(numberOfBytes:Int) {
+    let interval: TimeInterval = Double(numberOfBytes * 10) / 16660.0 * 3.0
+    timeoutTimer = Timer.scheduledTimer(timeInterval: interval, target: self, selector: #selector(timeoutTimerAction), userInfo: nil, repeats: false)
+    RunLoop.current.add(timeoutTimer!, forMode: .common)
+  }
+  
+  private func stopTimeoutTimer() {
+    timeoutTimer?.invalidate()
+    timeoutTimer = nil
+  }
+
   // MARK: Public Methods
+  
+  public func addObserver(observer:SGLocoNetInterfaceObserver) {
+    observers[ObjectIdentifier(observer)] = observer
+  }
+  
+  public func removeObserver(observer:SGLocoNetInterfaceObserver) {
+    observers.removeValue(forKey: ObjectIdentifier(observer))
+  }
   
   public func didReceive(data:[UInt8]) {
     
@@ -117,47 +218,44 @@ public class SGLocoNetInterface : NSObject   {
         
       if !restart {
         
-        let locoNetMessage = LocoNetMessage(data: message)
+        let locoNetMessage = SGLocoNetMessage(data: message)
         locoNetMessage.timeStamp = Date.timeIntervalSinceReferenceDate
         locoNetMessage.timeSinceLastMessage = locoNetMessage.timeStamp - lastTimeStamp
         lastTimeStamp = locoNetMessage.timeStamp
 
-        if let currentItem {
+        if let sending, let delegate {
           
-          if message == currentItem.message {
+          if message == sending.message {
             stopTimeoutTimer()
-            switch currentItem.messageType {
+            switch sending.messageType {
             case .immPacket:
-              mode = .waitingForIMMPacketAck
+              state = .waitingForIMMPacketAck
               startTimeoutTimer(numberOfBytes: 4)
             case .setSwWithAck:
-              mode = .waitingForSetSwAck
+              state = .waitingForSetSwAck
               startTimeoutTimer(numberOfBytes: 4)
             default:
-              DispatchQueue.main.async {
-                self.currentItem = nil
-                self.sendNext()
-              }
+              state = .idle
+              self.sending = nil
+              sendNext()
             }
           }
           else {
             
-            switch mode {
+            switch state {
             case .waitingForIMMPacketAck:
               switch locoNetMessage.messageType {
               case .immPacketOK:
                 stopTimeoutTimer()
-                DispatchQueue.main.async {
-                  self.mode = .idle
-                  self.currentItem = nil
-                  self.sendNext()
-                }
+                state = .idle
+                self.sending = nil
+                sendNext()
               case .immPacketBufferFull:
                 stopTimeoutTimer()
-                mode = .sendingMessage
+                state = .sendingMessage
                 retryCount = 10
-                startTimeoutTimer(numberOfBytes: currentItem.message.count)
-                send(data: currentItem.message)
+                startTimeoutTimer(numberOfBytes: sending.message.count)
+                delegate.sendData?(interface: self, data: sending.message)
               default:
                 break
               }
@@ -165,42 +263,34 @@ public class SGLocoNetInterface : NSObject   {
               switch locoNetMessage.messageType {
               case .setSwWithAckAccepted:
                 stopTimeoutTimer()
-                DispatchQueue.main.async {
-                  self.mode = .idle
-                  self.currentItem = nil
-                  self.sendNext()
-                }
+                state = .idle
+                self.sending = nil
+                sendNext()
               case .setSwWithAckRejected:
                 stopTimeoutTimer()
-                mode = .sendingMessage
+                state = .sendingMessage
                 retryCount = 10
-                startTimeoutTimer(numberOfBytes: currentItem.message.count)
-                send(data: currentItem.message)
+                startTimeoutTimer(numberOfBytes: sending.message.count)
+                delegate.sendData?(interface: self, data: sending.message)
               default:
                 break
               }
             default:
               break
             }
+            
           }
           
         }
         
-        if locoNetMessage.messageType == .opSwDataAP1 {
-          commandStationType = LocoNetCommandStationType(rawValue: UInt16(locoNetMessage.message[11])) ?? .standAlone
-        }
-      
-        DispatchQueue.main.async {
-          for (_, observer) in self.observers {
-            observer.locoNetMessageReceived?(message: locoNetMessage)
-          }
+        for (_, observer) in observers {
+          observer.locoNetInterface?(sender: self, didReceive: locoNetMessage)
         }
 
       }
 
     }
     
-
   }
 
 }

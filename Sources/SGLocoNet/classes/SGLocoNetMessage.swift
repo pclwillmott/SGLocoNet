@@ -57,16 +57,14 @@ public class SGLocoNetMessage : NSObject {
   
   private var _messageType : SGLocoNetMessageType?
   
+  private var _functions : [Bool] = []
+  
   // MARK: Public Properties
   
   public var message : [UInt8]
   
-  public var opCodeRawValue : UInt8 {
-    return message[0]
-  }
-  
   public var opCode : SGLocoNetMessageOpcode {
-    return SGLocoNetMessageOpcode.init(rawValue: opCodeRawValue) ?? .OPC_UNKNOWN
+    return SGLocoNetMessageOpcode(rawValue: message[0]) ?? .opcUnknown
   }
   
   public var messageLength : UInt8 {
@@ -100,47 +98,38 @@ public class SGLocoNetMessage : NSObject {
   
   public var timeSinceLastMessage : TimeInterval = 0.0
   
-  public var timeoutCode : UInt8 {
-    return message.count == 2 && message[0] == 0x7f ? message[1] : 0x00
-  }
+//  public var timeoutCode : UInt8 {
+//    return message.count == 2 && message[0] == 0x7f ? message[1] : 0x00
+//  }
   
   public var slotData : [UInt8] {
-    
+    var slotData : [UInt8] = []
     if messageType == .locoSlotDataP1 || messageType == .locoSlotDataP2 {
-    
-      let count = Int(messageLength) - 3
-    
-      var slotData = [UInt8](repeating: 0, count: count)
-      
-      var index = 0
-      while index < count {
-        slotData[index] = message[index + 2]
-        index += 1
+      for index in 2 ..< Int(messageLength) - 3 {
+        slotData.append(message[index])
       }
-      
-      return slotData
-
     }
-    
-    return []
-    
+    return slotData
   }
   
-  public var messageHex : String {
+  public var hex : String {
     var str : String = ""
-    for x in message {
-      str += String(format: "%02X ",x)
+    for byte in message {
+      if !str.isEmpty {
+        str += " "
+      }
+      str += String(format: "%02X ",byte)
     }
-    return str.trimmingCharacters(in: [" "])
+    return str
   }
   
-  public var immPacketRepeatCount : LocoNetIMMPacketRepeat? {
+  public var immPacketRepeatCount : SGLocoNetIMMPacketRepeat? {
   
     guard messageType == .immPacket || messageType == .s7CVRW else {
       return nil
     }
     
-    return LocoNetIMMPacketRepeat(rawValue: message[3] & 0b00001111)
+    return SGLocoNetIMMPacketRepeat(rawValue: message[3] & 0b00001111)
     
   }
   
@@ -175,6 +164,7 @@ public class SGLocoNetMessage : NSObject {
     
   }
   
+  /*
   public var cvValue : UInt8? {
     
     switch messageType {
@@ -322,213 +312,911 @@ public class SGLocoNetMessage : NSObject {
     }
     
   }
+  */
+    
+  public var boardId : Int? {
+    switch messageType {
+    case .pmRepBXP88:
+      var bid = message[2]
+      bid |= (message[1] & 0b00000001) == 0b00000001 ? 0b10000000 : 0
+      return Int(bid) + 1
+    case .iplDevData:
+      var bid = message[15]
+      bid |= (message[14] & 0b00000001) == 0b00000001 ? 0b10000000 : 0
+      return Int(bid) + 1
+    case .querySlot1, .querySlot2, .querySlot3, .querySlot4, .querySlot5:
+      if productCode == .bxp88 {
+        return Int(message[17]) + 1
+      }
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var baseAddress : UInt16? {
+    switch messageType {
+    case .s7Info, .setS7BaseAddr:
+      return (UInt16(message[13]) | (UInt16(message[14]) << 7)) + 1
+    default:
+      return nil
+    }
+  }
+
+  public var transponderZone : Int? {
+    switch messageType {
+    case .locoRep:
+      return Int(message[6]) | (Int(message[5]) << 7)
+    case .transRep:
+      return Int(message[2]) | (Int(message[1] & 0b00001111) << 7)
+    default:
+      return nil
+    }
+  }
+  
+  public var locomotiveAddress : UInt16? {
+    switch messageType {
+    case .locoRep:
+      let highBits = message[3] == 0x7d ? 0 : UInt16(message[3]) << 7
+      return UInt16(message[4]) | highBits
+    case .locoSlotDataP1:
+      var address = UInt16(message[4])
+      if message[9] != 0x7f {
+        address |= UInt16(message[9]) << 7
+      }
+      return address
+    case .transRep:
+      return UInt16(message[4]) | (UInt16(message[3]) << 7)
+    case .locoSlotDataP2:
+      return UInt16(message[5]) | (UInt16(message[6]) << 7)
+    default:
+      return nil
+    }
+  }
+
+  public var productCode : SGDigitraxProductCode? {
+    var pc : UInt8?
+    switch messageType {
+    case .iplDevData:
+      pc = message[5] | (message[4] & 0b00000001 != 0 ? 0b10000000 : 0b00000000)
+    case .querySlot1:
+      pc = message[14]
+    case .querySlot2, .querySlot3, .querySlot4, .querySlot5:
+      pc = message[16]
+    case .s7Info, .setS7BaseAddr:
+      pc = message[9]
+    default:
+      break
+    }
+    if let pc {
+      return SGDigitraxProductCode(rawValue: pc)
+    }
+    return nil
+  }
+
+  public var serialNumber : UInt16? {
+    switch messageType {
+    case .iplDevData:
+      let sn1 = message[11] | ((message[9] & 0b00000010) != 0 ? 0b10000000 : 0b00000000)
+      let sn2 = message[12] | ((message[9] & 0b00000100) != 0 ? 0b10000000 : 0b00000000)
+      return UInt16(sn1) | (UInt16(sn2) << 8)
+    case .querySlot1, .querySlot2, .querySlot3, .querySlot4, .querySlot5:
+      return UInt16(message[19] & 0b00111111) << 7 | UInt16(message[18])
+    case .s7Info, .setS7BaseAddr:
+      return UInt16(message[11]) | (UInt16(message[12]) << 7)
+    default:
+      return nil
+    }
+  }
+
+  public var partialSerialNumberLow : UInt16? {
+    guard let serialNumber else {
+      return nil
+    }
+    return serialNumber & 0x7f
+  }
+  
+  public var partialSerialNumberHigh : UInt16? {
+    guard let serialNumber else {
+      return nil
+    }
+    return (serialNumber >> 8) & 0x7f
+  }
+  
+  public var softwareVersion : Double? {
+    switch messageType {
+    case .iplDevData:
+      let sv = message[8] | (message[4] & 0b00001000 != 0 ? 0b10000000 : 0b00000000)
+      return Double((sv & 0b11111000) >> 3) + Double (sv & 0b111) / 10.0
+    case .querySlot1:
+      return Double(message[16] & 0x78) / 8.0 + Double(message[16] & 0x07) / 10.0
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var hardwareVersion : Double? {
+    switch messageType {
+    case .querySlot1:
+      let supportedProducts : Set<SGDigitraxProductCode> = [
+        .dcs210,
+        .dcs240,
+        .dcs210Plus,
+        .dcs240Plus,
+        .pr4
+      ]
+      if supportedProducts.contains(productCode!){
+        return Double(message[17] & 0x78) / 8.0 + Double(message[17] & 0x07) / 10.0
+      }
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var detectionSectionShorted : [Bool]? {
+    switch messageType {
+    case .pmRepBXP88:
+      if (message[3] & 0b01100000) == 0x20 {
+        var shorted = [Bool](repeating: false, count: 8)
+        var mask : UInt8 = 0b00000001
+        for index in 0...3 {
+          shorted[index + 4] = (message[3] & mask) == mask
+          shorted[index + 0] = (message[4] & mask) == mask
+          mask <<= 1
+        }
+        return shorted
+      }
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var transponderAddress : Int {
+    var addr = Int(message[2])
+    addr |= (Int(message[1] & 0b00001111) << 7)
+    return addr + 1
+  }
+  
+  public var sensorAddress : Int? {
+    switch messageType {
+    case .sensRepGenIn:
+      var addr = Int(message[1]) << 1
+      addr |= (Int(message[2] & 0b00001111) << 8)
+      addr |= (Int(message[2] & 0b00100000) >> 5)
+      return addr + 1
+    case .sensRepTurnIn:
+      var addr = Int(message[1])
+      addr |= (Int(message[2] & 0b00001111) << 7)
+      return addr + 1
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var switchAddress : Int? {
+    switch messageType {
+    case .setSw, .setSwWithAck:
+      return Int(message[1]) | (Int(message[2] & 0x0f) << 7) + 1
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var sensorState : Bool? {
+    switch messageType {
+    case .sensRepGenIn, .sensRepTurnIn:
+      let mask : UInt8 = 0b00010000
+      return (message[2] & mask) == mask
+    case .transRep:
+      let mask : UInt8 = 0b00100000
+      return (message[1] & mask) == mask
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var isSlotUpdate : Bool {
+    
+    guard slotNumber != nil else {
+      return false
+    }
+    
+    let notSlotUpdate : Set<SGLocoNetMessageType> = [
+      .locoSlotDataP1,
+      .locoSlotDataP2,
+      .getLocoSlotData
+    ]
+    
+    return !notSlotUpdate.contains(messageType)
+    
+  }
+  
+  public var slotBank : UInt8? {
+    let bankMask : UInt8 = 0b00000111
+    switch messageType {
+    case .locoSlotDataP2:
+      return message[2] & bankMask
+    case .setLocoSlotInUseP2:
+      return message[3] & bankMask
+    case .setLocoSlotDataP2:
+      return message[2] & bankMask
+    case .getLocoSlotData:
+      return message[2] & bankMask
+    case .locoSpdDirP2:
+      return message[1] & bankMask
+    case .locoF0F6P2:
+      return message[1] & bankMask
+    case .locoF7F13P2:
+      return message[1] & bankMask
+    case .locoF14F20P2:
+      return message[1] & bankMask
+    case .locoF21F28P2:
+      return message[1] & bankMask
+    case .setLocoSlotStat1P2:
+      return message[1] & bankMask
+    case .moveSlotP2:
+      return message[3] & bankMask
+    case .linkSlotsP2:
+      return message[1] & bankMask
+    case .unlinkSlotsP2:
+      return message[1] & bankMask
+    default:
+      return nil
+    }
+  }
+
+  public var slotNumber : UInt8? {
+    switch messageType {
+    case .locoSlotDataP1:
+      return message[2]
+    case .setLocoSlotInUseP1:
+      return message[2]
+    case .setLocoSlotDataP1:
+      return message[2]
+    case .locoSlotDataP2:
+      return message[3]
+    case .setLocoSlotInUseP2:
+      return message[4]
+    case .setLocoSlotDataP2:
+      return message[3]
+    case .getLocoSlotData:
+      return message[1]
+    case .locoSpdP1:
+      return message[1]
+    case .locoSpdDirP2:
+      return message[2]
+    case .locoDirF0F4P1:
+      return message[1]
+    case .locoF5F8P1:
+      return message[1]
+    case .locoF9F12P1:
+      return message[1]
+    case .locoF0F6P2:
+      return message[2]
+    case .locoF7F13P2:
+      return message[2]
+    case .locoF14F20P2:
+      return message[2]
+    case .locoF21F28P2:
+      return message[2]
+    case .setLocoSlotStat1P1:
+      return message[1]
+    case .setLocoSlotStat1P2:
+      return message[2]
+    case .moveSlotP1:
+      return message[2]
+    case .moveSlotP2:
+      return message[4]
+    case .linkSlotsP1:
+      return message[1]
+    case .unlinkSlotsP1:
+      return message[1]
+    case .linkSlotsP2:
+      return message[2]
+    case .unlinkSlotsP2:
+      return message[2]
+    case .consistDirF0F4:
+      return message[1]
+    default:
+      return nil
+    }
+  }
+
+  public var trackVoltage : Double? {
+    switch messageType {
+    case .querySlot2:
+      return Double(message[4]) * 2.0 / 10.0
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var inputVoltage : Double? {
+    switch messageType {
+    case .querySlot2:
+      return Double(message[5]) * 2.0 / 10.0
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var currentDrawn : Double? {
+    switch messageType {
+    case .querySlot2:
+      return Double(message[6]) / 10.0
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var currentLimit : Double? {
+    switch messageType {
+    case .querySlot2:
+      return Double(message[7]) / 10.0
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var railSyncVoltage : Double? {
+    switch messageType {
+    case .querySlot2:
+      return Double(message[10]) * 2.0 / 10.0
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var locoNetVoltage : Double? {
+    switch messageType {
+    case .querySlot2:
+      return Double(message[12]) * 2.0 / 10.0
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var slotsUsed : Int? {
+    switch messageType {
+    case .querySlot3:
+      return Int(message[4]) | (Int(message[5] & 0b00111111) << 7)
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var idleSlots : Int? {
+    switch messageType {
+    case .querySlot3:
+      return Int(message[6]) | (Int(message[7] & 0b00111111) << 7)
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var freeSlots : Int? {
+    switch messageType {
+    case .querySlot3:
+      return Int(message[8]) | (Int(message[9] & 0b00111111) << 7)
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var consists : Int? {
+    switch messageType {
+    case .querySlot3:
+      return Int(message[10]) | (Int(message[11] & 0b00111111) << 7)
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var subMembers : Int? {
+    switch messageType {
+    case .querySlot3:
+      return Int(message[12]) | (Int(message[13] & 0b00111111) << 7)
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var goodLocoNetMessages : Int? {
+    switch messageType {
+    case .querySlot4:
+      return Int(message[4]) | Int(message[5] & 0b00111111) << 7
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var badLocoNetMessages : Int? {
+    switch messageType {
+    case .querySlot4:
+      return Int(message[6]) | Int(message[7] & 0b00111111) << 7
+    default:
+      break
+    }
+    return nil
+  }
+
+  // THIS IS A GUESS
+  public var numberOfSleeps : Int? {
+    switch messageType {
+    case .querySlot4:
+      return Int(message[8]) | Int(message[9] & 0b00111111) << 7
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var trackFaults : Int? {
+    switch messageType {
+    case .querySlot5:
+      return Int(message[4]) | Int(message[5]) << 7
+    default:
+      break
+    }
+    return nil
+  }
+
+  // THIS IS A GUESS
+  public var autoReverseEvents : Int? {
+    switch messageType {
+    case .querySlot5:
+      return Int(message[6]) | Int(message[7]) << 7
+    default:
+      break
+    }
+    return nil
+  }
+
+  // THIS IS A GUESS
+  public var disturbances : Int? {
+    switch messageType {
+    case .querySlot5:
+      return Int(message[8]) | Int(message[9]) << 7
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var bit40 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[4] & 0b00000001 == 0b00000001
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit41 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[4] & 0b00000010 == 0b00000010
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit42 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[4] & 0b00000100 == 0b00000100
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit43 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[4] & 0b00001000 == 0b00001000
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit44 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[4] & 0b00010000 == 0b00010000
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit45 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[4] & 0b00100000 == 0b00100000
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit46 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[4] & 0b01000000 == 0b01000000
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit50 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[5] & 0b00000001 == 0b00000001
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit51 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[5] & 0b00000010 == 0b00000010
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit52 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[5] & 0b00000100 == 0b00000100
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit53 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[5] & 0b00001000 == 0b00001000
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit54 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[5] & 0b00010000 == 0b00010000
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit55 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[5] & 0b00100000 == 0b00100000
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var bit56 : Bool? {
+    switch messageType {
+    case .querySlot1:
+      return message[5] & 0b01000000 == 0b01000000
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var slotStatus1 : UInt8? {
+    switch messageType {
+    case .locoSlotDataP1:
+      return message[3]
+    case .locoSlotDataP2:
+      return message[4]
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var slotState : SGLocoNetSlotState? {
+    guard let slotStatus1 else {
+      return nil
+    }
+    return SGLocoNetSlotState(rawValue: slotStatus1 & ~SGLocoNetSlotState.protectMask)
+  }
+  
+  public var consistState : SGLocoNetSlotConsistState? {
+    guard let slotStatus1 else {
+      return nil
+    }
+    return SGLocoNetSlotConsistState(rawValue: slotStatus1 & ~SGLocoNetSlotConsistState.protectMask)
+  }
+  
+  public var decoderProtocol : SGLocoNetDecoderProtocol? {
+    guard let slotStatus1 else {
+      return nil
+    }
+    return SGLocoNetDecoderProtocol(rawValue: slotStatus1 & ~SGLocoNetDecoderProtocol.protectMask)
+  }
+
+  public var direction : SGLocoNetLocomotiveDirection?   {
+    var byte : UInt8?
+    switch messageType {
+    case .locoSlotDataP1:
+      byte = message[6]
+    case .locoSlotDataP2:
+      byte = message[10]
+    default:
+      break
+    }
+    if let byte  {
+      return SGLocoNetLocomotiveDirection(rawValue: byte & ~SGLocoNetLocomotiveDirection.protectMask)
+    }
+    return nil
+  }
+  
+  public var speed : UInt8? {
+    switch messageType {
+    case .locoSlotDataP1:
+      return message[5]
+    case .locoSlotDataP2:
+      return message[8]
+    default:
+      return nil
+    }
+  }
+
+  public var throttleID : UInt16? {
+    switch messageType {
+    case .locoSlotDataP1:
+      var id = UInt16(message[11])
+      if message[9] == 0x7f && (message[8] & 0b100) == 0b100 {
+        id |= UInt16(message[12]) << 7
+      }
+      else {
+        id |= UInt16(message[12]) << 8
+      }
+      return id
+    case .locoSlotDataP2:
+      return UInt16(message[18]) | UInt16(message[19]) << 8
+    case .iplDevData:
+      return partialSerialNumberHigh! << 8 | partialSerialNumberLow!
+    case .zapped:
+      return UInt16(message[2])
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var functions : [Bool] {
+    
+    if _functions.isEmpty {
+      
+      var mask : UInt8 = 0
+      
+      func process(index:Int) {
+        _functions.append((message[index] & mask) == mask)
+        mask <<= 1
+      }
+      
+      switch messageType {
+        
+      case .locoSlotDataP1:
+        
+        mask = 0b00010000
+        process(index: 6)
+        
+        mask = 0b00000001
+        for _ in 1 ... 4 {
+          process(index: 6)
+        }
+        
+        mask = 0b00000001
+        for _ in 5 ... 8 {
+          process(index: 10)
+        }
+        
+      case .locoSlotDataP2:
+        
+        mask = 0b00010000
+        process(index: 10)
+        
+        mask = 0b00000001
+        for _ in 1 ... 4 {
+          process(index: 10)
+        }
+        
+        mask = 0b00000001
+        for _ in 5 ... 11 {
+          process(index: 11)
+        }
+        
+        mask = 0b00010000
+        process(index: 9)
+        
+        mask = 0b00000001
+        for _ in 13 ... 19 {
+          process(index: 12)
+        }
+        
+        mask = 0b00100000
+        process(index: 9)
+        
+        mask = 0b00000001
+        for _ in 21 ... 27 {
+          process(index: 13)
+        }
+        
+        mask = 0b01000000
+        process(index: 9)
+        
+      default:
+        break
+      }
+      
+    }
+    
+    return _functions
+    
+  }
+  
+  public var isF9F28Available : Bool? {
+    return functions.isEmpty ? nil : functions.count == 29
+  }
+
+  public var groupName : String? {
+    switch messageType {
+    case .duplexGroupData:
+      
+      var data : [UInt8] = []
+      
+      data.append(message[5] | ((message[4] & 0b00000001) == 0b00000001 ? 0x80 : 0x00))
+      data.append(message[6] | ((message[4] & 0b00000010) == 0b00000010 ? 0x80 : 0x00))
+      data.append(message[7] | ((message[4] & 0b00000100) == 0b00000100 ? 0x80 : 0x00))
+      data.append(message[8] | ((message[4] & 0b00001000) == 0b00001000 ? 0x80 : 0x00))
+
+      data.append(message[10] | ((message[9] & 0b00000001) == 0b00000001 ? 0x80 : 0x00))
+      data.append(message[11] | ((message[9] & 0b00000010) == 0b00000010 ? 0x80 : 0x00))
+      data.append(message[12] | ((message[9] & 0b00000100) == 0b00000100 ? 0x80 : 0x00))
+      data.append(message[13] | ((message[9] & 0b00001000) == 0b00001000 ? 0x80 : 0x00))
+
+      return String(bytes: data, encoding: String.Encoding.utf8)!
+      
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var groupPassword : String? {
+    switch messageType {
+    case .duplexGroupData:
+      
+      let byte1 = Int(message[15] | ((message[14] & 0b00000001) == 0b00000001 ? 0x80 : 0x00))
+      let byte2 = Int(message[16] | ((message[14] & 0b00000010) == 0b00000010 ? 0x80 : 0x00))
+
+      let char1 = byte1 >> 4
+      let char2 = byte1 & 0xf
+      let char3 = byte2 >> 4
+      let char4 = byte2 & 0xf
+
+      return String(format: "%01X%01X%01X%01X", char1, char2, char3, char4)
+
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var channelNumber : Int? {
+    switch messageType {
+    case .duplexGroupData:
+      return Int(message[17])
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public var groupID : Int? {
+    switch messageType {
+    case .duplexGroupData:
+      return Int(message[18])
+    default:
+      break
+    }
+    return nil
+  }
+
+  public var fastClockScaleFactor : UInt8? {
+    guard messageType == .fastClockData || messageType == .setFastClockData else {
+      return nil
+    }
+    return message[3]
+  }
   
   public var messageType : SGLocoNetMessageType {
     
     get {
       
       if _messageType == nil {
-
-        switch message[0] {
         
-          // MARK: 0xB2
-            
-          case 0xb2: // OPC_INPUT_REP
-            
-            if (message[2] & 0b11000000) == 0b01000000 {
-              _messageType = .sensRepGenIn
-            }
-            
-          // MARK: 0xB4
-            
-          case 0xb4: // OPC_LONG_ACK
-            
-            switch message[1] {
-            case 0x30:
-              switch message[2] {
-              case 0x00:
-                _messageType = .setSwRejected
-              case 0x7f:
-                _messageType = .setSwAccepted
-              default:
-                break
-              }
-            case 0x38:
-              switch message[2] {
-              case 0x00:
-                _messageType = .invalidUnlinkP1
-              default:
-                break
-              }
-            case 0x39:
-              switch message[2] {
-              case 0x00:
-                _messageType = .invalidLinkP1
-              default:
-                break
-              }
-            case 0x3a:
-              switch message[2] {
-              case 0x00:
-                _messageType = .illegalMoveP1
-              default:
-                break
-              }
-            case 0x3b:
-              switch message[2] {
-              case 0x00:
-                _messageType = .slotNotImplemented
-              default:
-                break
-              }
-            case 0x3c:
-              _messageType = .swState
-            case 0x3d:
-              switch message[2] {
-              case 0x00:
-                _messageType = .setSwWithAckRejected
-              case 0x7f:
-                _messageType = .setSwWithAckAccepted
-              default:
-                break
-              }
-            case 0x3e:
-              switch message[2] {
-              case 0x00:
-                _messageType = .noFreeSlotsP2
-              default:
-                break
-              }
-            case 0x3f:
-              switch message[2] {
-              case 0x00:
-                _messageType = .noFreeSlotsP1
-              default:
-                break
-              }
-            case 0x50:
-              if (message[2] & 0b01011111) == 0b00010000 {
-                _messageType = .brdOpSwState
-              }
-              else if message[2] == 0x7f {
-                _messageType = .setBrdOpSwOK
-              }
-            case 0x54:
-              switch message[2] {
-              case 0x00:
-                _messageType = .d4Error
-              default:
-                break
-              }
-            case 0x55:
-              _messageType = .zapped
-            case 0x6d:
-              switch message[2] {
-                case 0x00:
-                _messageType = .immPacketBufferFull
-                case 0x7f:
-                _messageType = .immPacketOK
-              default:
-                _messageType = .s7CVState
-                break
-              }
-            case 0x6e:
-              switch message[2] {
-              case 0x00:
-                _messageType = .routesDisabled
-              case 0x7f:
-                _messageType = .setSlotDataOKP2
-              default:
-                _messageType = .s7CVState
-                break
-              }
-            case 0x6f:
-              switch message[2] {
-              case 0x00:
-                _messageType = .programmerBusy
-              case 0x01:
-                _messageType = .progCmdAccepted
-              case 0x40:
-                _messageType = .progCmdAcceptedBlind
-              case 0x7f:
-                _messageType = .setSlotDataOKP1
-              default:
-                break
-              }
-            case 0x7e:
-              _messageType = .immPacketLMOK
-           default:
-              break
-            }
-            
-        // MARK: 0x81
+        _messageType = .unknown
+        
+        switch opCode {
           
-        case 0x81: // OPC_BUSY
-          
+        case .opcBusy:
           _messageType = .busy
-        
-        // MARK: 0x82
-          
-        case 0x82: // OPC_GPOFF
-          
+
+        case .opcGPOff:
           _messageType = .pwrOff
-        
-        // MARK: 0x83
-          
-        case 0x83: // OPC_GPON
-          
+
+        case .opcGPOn:
           _messageType = .pwrOn
-          
-        // MARK: 0x85
-          
-        case 0x85: // OPC_IDLE
-          
+
+        case .opcIdle:
           _messageType = .setIdleState
- 
-        // MARK: 0x8A
-          
-        case 0x8a:
-          
+
+        case .opcLocoReset:
           _messageType = .reset
 
-        // MARK: 0xA0
-          
-        case 0xa0: // OPC_LOCO_SPD
-          
+        case .opcLocoSpd:
           if message[1] > 0 && message[1] < 0x78 {
             _messageType = .locoSpdP1
           }
 
-        // MARK: 0xA1
-          
-        case 0xa1: // OPC_LOCO_DIRF
-          
+        case .opcLocoDirF:
           if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b01000000) == 0x00 {
             _messageType = .locoDirF0F4P1
           }
-          
-        // MARK: 0xA2
-          
-        case 0xa2: // OPC_LOCO_SND
-          
-          if message[1] > 0 && message[1] < 0x78 &&
-            (message[2] & 0b11110000) == 0x00 {
+
+        case .opcLocoSnd:
+          if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b11110000) == 0x00 {
             _messageType = .locoF5F8P1
           }
 
-        // MARK: 0xA3
-            
-        case 0xa3:
-            
-          if message[1] > 0 && message[1] < 0x78 &&
-            (message[2] & 0b11110000) == 0x00 {
+        case .opcLocoSnd2:
+          if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b11110000) == 0x00 {
             _messageType = .locoF9F12P1
           }
 
-        // MARK: 0xB0
-          
-        case 0xb0: // OPC_SW_REQ
-          
+        case .opcSwReq:
           if (message[1] & 0b01111000) == 0b01111000 && (message[2] & 0b11011111) == 0b00000111 {
             _messageType = .interrogate
           }
@@ -536,55 +1224,162 @@ public class SGLocoNetMessage : NSObject {
             _messageType = .setSw
           }
 
-        // MARK: 0xB1
-          
-        case 0xb1: // OPC_SW_REP
-          
+        case .opcSwRep:
           let test = message[2] & 0b11000000
-          if test == 0b01000000 {
+          switch test {
+          case 0b01000000:
             _messageType = .sensRepTurnIn
-          }
-          else if test == 0b00000000 {
+          case 0b00000000:
             _messageType = .sensRepTurnOut
+          default:
+            break
+          }
+          
+        case .opcInputRep:
+          if (message[2] & 0b11000000) == 0b01000000 {
+            _messageType = .sensRepGenIn
           }
 
-        // MARK: 0xB5
-          
-        case 0xb5: // OPC_SLOT_STAT1
-          
+        case .opcLongAck:
+          switch message[1] {
+          case 0x30:
+            switch message[2] {
+            case 0x00:
+              _messageType = .setSwRejected
+            case 0x7f:
+              _messageType = .setSwAccepted
+            default:
+              break
+            }
+          case 0x38:
+            switch message[2] {
+            case 0x00:
+              _messageType = .invalidUnlinkP1
+            default:
+              break
+            }
+          case 0x39:
+            switch message[2] {
+            case 0x00:
+              _messageType = .invalidLinkP1
+            default:
+              break
+            }
+          case 0x3a:
+            switch message[2] {
+            case 0x00:
+              _messageType = .illegalMoveP1
+            default:
+              break
+            }
+          case 0x3b:
+            switch message[2] {
+            case 0x00:
+              _messageType = .slotNotImplemented
+            default:
+              break
+            }
+          case 0x3c:
+            _messageType = .swState
+          case 0x3d:
+            switch message[2] {
+            case 0x00:
+              _messageType = .setSwWithAckRejected
+            case 0x7f:
+              _messageType = .setSwWithAckAccepted
+            default:
+              break
+            }
+          case 0x3e:
+            switch message[2] {
+            case 0x00:
+              _messageType = .noFreeSlotsP2
+            default:
+              break
+            }
+          case 0x3f:
+            switch message[2] {
+            case 0x00:
+              _messageType = .noFreeSlotsP1
+            default:
+              break
+            }
+          case 0x50:
+            if (message[2] & 0b01011111) == 0b00010000 {
+              _messageType = .brdOpSwState
+            }
+            else if message[2] == 0x7f {
+              _messageType = .setBrdOpSwOK
+            }
+          case 0x54:
+            switch message[2] {
+            case 0x00:
+              _messageType = .d4Error
+            default:
+              break
+            }
+          case 0x55:
+            _messageType = .zapped
+          case 0x6d:
+            switch message[2] {
+              case 0x00:
+              _messageType = .immPacketBufferFull
+              case 0x7f:
+              _messageType = .immPacketOK
+            default:
+              _messageType = .s7CVState
+              break
+            }
+          case 0x6e:
+            switch message[2] {
+            case 0x00:
+              _messageType = .routesDisabled
+            case 0x7f:
+              _messageType = .setSlotDataOKP2
+            default:
+              _messageType = .s7CVState
+              break
+            }
+          case 0x6f:
+            switch message[2] {
+            case 0x00:
+              _messageType = .programmerBusy
+            case 0x01:
+              _messageType = .progCmdAccepted
+            case 0x40:
+              _messageType = .progCmdAcceptedBlind
+            case 0x7f:
+              _messageType = .setSlotDataOKP1
+            default:
+              break
+            }
+          case 0x7e:
+            _messageType = .immPacketLMOK
+         default:
+            break
+          }
+
+        case .opcSlotStat1:
           if message[1] > 0 && message[1] < 0x78 {
             _messageType = .setLocoSlotStat1P1
           }
 
-        // MARK: 0xB6
-          
-        case 0xb6: // OPC_CONSIST_FUNC
-          
+        case .opcConsistFunc:
           if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b11100000) == 0 {
             _messageType = .consistDirF0F4
           }
-        
-        // MARK: 0xB8
-          
-        case 0xb8: // OPC_UNLINK_SLOTS
-          
+
+        case .opcUnlinkSlots:
           if message[1] > 0 && message[1] < 0x78 && message[2] > 0 && message[2] < 0x78 {
             _messageType = .unlinkSlotsP1
           }
-          
-        // MARK: 0xB9
-          
-        case 0xb9: // OPC_LINK_SLOTS
-          
-          if message[1] > 0 && message[1] < 0x78 &&
-             message[2] > 0 && message[2] < 0x78 {
+
+        case .opcLinkSlots:
+          if message[1] > 0 && message[1] < 0x78 && message[2] > 0 && message[2] < 0x78 {
             _messageType = .linkSlotsP1
           }
-          
-       // MARK: 0xBA
-            
-        case 0xba: // OPC_MOVE_SLOTS
-          
+
+        case .opcMoveSlots:
           if message[1] == 0x00 {
             _messageType = .dispatchGetP1
           }
@@ -598,10 +1393,7 @@ public class SGLocoNetMessage : NSObject {
             _messageType = .moveSlotP1
           }
 
-        // MARK: 0xBB
-            
-        case 0xbb: // OPC_RQ_SL_DATA
-          
+        case .opcRqSlData:
           if message[2] == 0x00 {
             
             switch message[1] {
@@ -638,79 +1430,49 @@ public class SGLocoNetMessage : NSObject {
           else if message[1] < 0x78 && (message[2] & 0b10111000) == 0 {
             _messageType = .getLocoSlotData
           }
-          
-        // MARK: 0xBC
-          
-        case 0xbc: // OPC_SW_STATE
+
+        case .opcSwState:
           if (message[2] & 0b01000000) == 0 {
             _messageType = .getSwState
           }
-          
-        // MARK: 0xBD
-          
-        case 0xbd: // OPC_SW_ACK
-          
+
+        case .opcSwAck:
           if (message[2] & 0b11000000) == 0 {
             _messageType = .setSwWithAck
           }
 
-        // MARK: 0xBE
-          
-        case 0xbe:
-          
+        case .opcLocoAdrP2:
           _messageType = message[1] == 0 ? .getLocoSlotDataSAdrP2 : .getLocoSlotDataLAdrP2
 
-        // MARK: 0xBF
-          
-        case 0xbf: // OPC_LOCO_ADR
-          
+        case .opcLocoAdr:
           _messageType = message[1] == 0 ? .getLocoSlotDataSAdrP1 : .getLocoSlotDataLAdrP1
-          
-        // MARK: 0xD0
-            
-        case 0xd0:
-          
-          if (message[1] & 0b11111110) == 0b01100010 &&
-             (message[3] & 0b11110000) == 0b01110000 {
+
+        case .opcD0Group:
+          if (message[1] & 0b11111110) == 0b01100010 && (message[3] & 0b11110000) == 0b01110000 {
             _messageType = .getBrdOpSwState
           }
-          else if (message[1] & 0b11111110) == 0b01110010 &&
-                  (message[3] & 0b11110000) == 0b01110000 {
+          else if (message[1] & 0b11111110) == 0b01110010 && (message[3] & 0b11110000) == 0b01110000 {
             _messageType = .setBrdOpSwState
           }
-          else if message[1] == 0x60 &&
-                 (message[4] & 0b11111110) == 0 {
+          else if message[1] == 0x60 && (message[4] & 0b11111110) == 0 {
             _messageType = .trkShortRep
           }
-          else if message[1] & 0b11111110 == 0b01100010 &&
-                 (message[3] & 0b11110000) == 0b00110000 &&
-                 (message[4] & 0b11100000) == 0 {
+          else if message[1] & 0b11111110 == 0b01100010 && (message[3] & 0b11110000) == 0b00110000 && (message[4] & 0b11100000) == 0 {
             _messageType = .pmRep
           }
-          else if message[1] & 0b01111110 == 0b01100010 &&
-                 (message[3] & 0b10010000) == 0 &&
-                 (message[4] & 0b10010000) == 0 {
+          else if message[1] & 0b01111110 == 0b01100010 && (message[3] & 0b10010000) == 0 && (message[4] & 0b10010000) == 0 {
             _messageType = .pmRepBXP88
           }
           else if (message[1] & 0b11010000) == 0 {
             _messageType = .transRep
           }
 
-        // MARK: 0xD3
-          
-        case 0xd3:
-          
-          if message[1] == 0x10 &&
-            (message[2] & 0b11111100) == 0 &&
-             message[3] == 0x00 &&
-             message[4] == 0x00 {
+        case .opcPrMode:
+          if message[1] == 0x10 && (message[2] & 0b11111100) == 0 && message[3] == 0x00 && message[4] == 0x00 {
             _messageType = .prMode
           }
 
-        // MARK: 0xD4
-          
-        case 0xd4:
- 
+        case .opcD4Group:
           if (message[1] & 0b11111000) == 0b00100000 {
             
             let subCode = message[3]
@@ -774,11 +1536,8 @@ public class SGLocoNetMessage : NSObject {
             }
             
           }
-          
-        // MARK: 0xD5
-          
-        case 0xd5:
-          
+
+        case .opcD5Group:
           if message[2] > 0 && message[2] < 0x78 {
             
             let subCode = message[1] & 0b11111000
@@ -799,38 +1558,22 @@ public class SGLocoNetMessage : NSObject {
             }
             
           }
-          
-        // MARK: 0xD7
-          
-        case 0xd7:
-          
-          if message[2] == 0 &&
-            (message[3] & 0b11110000) == 0 &&
-            (message[4] == 0x20 || message[4] == 0x7f) {
+
+
+        case .opcD7Group:
+          if message[2] == 0 && (message[3] & 0b11110000) == 0 && (message[4] == 0x20 || message[4] == 0x7f) {
             _messageType = .receiverRep
           }
 
-        // MARK: 0xDF
-            
-        case 0xdf:
-          
-          if message[1] == 0x00 &&
-             message[2] == 0x00 &&
-             message[3] == 0x00 &&
-             message[4] == 0x00 {
+        case .opcDFGroup:
+          if message[1] == 0x00 && message[2] == 0x00 && message[3] == 0x00 && message[4] == 0x00 {
             _messageType = .findReceiver
           }
-          else if message[1] == 0x40 &&
-                  message[2] == 0x1f &&
-                 (message[3] & 0b11111000) == 0 &&
-                  message[4] == 0x00 {
+          else if message[1] == 0x40 && message[2] == 0x1f && (message[3] & 0b11111000) == 0 && message[4] == 0x00 {
             _messageType = .setLocoNetID
           }
 
-        // MARK: 0xE5
-            
-        case 0xe5: // OPC_PEER_XFER
-            
+        case .opcPeerXfer:
           switch message[1] {
             
           case 0x09:
@@ -1205,10 +1948,7 @@ public class SGLocoNetMessage : NSObject {
             break
           }
 
-        // MARK: 0xE6
-            
-        case 0xe6:
-          
+        case .opcSlRdDdataP2:
           if message[1] == 0x15 && (message[2] & 0b11111000) == 0 {
             
             if message[3] > 0 && message[3] < 0x78 && (message[7] & 0b10110000) == 00 {
@@ -1291,10 +2031,7 @@ public class SGLocoNetMessage : NSObject {
             
           }
 
-        // MARK: 0xE7
-            
-        case 0xe7: // OPC_SL_RD_DATA
-          
+        case .opcSlRdDdata:
           if message[ 1] == 0x0e &&
             (message[ 7] &  0b00110000) == 0x00 /* TRK */ {
             
@@ -1328,11 +2065,8 @@ public class SGLocoNetMessage : NSObject {
             }
             
           }
-          
-        // MARK: 0xED
-          
-        case SGLocoNetMessageOpcode.OPC_IMM_PACKET.rawValue:
-          
+
+        case .opcImmPacket:
           if message[1] == 0x0b && message[2] == 0x7f {
             
             if message[3] == 0x34 &&
@@ -1391,10 +2125,8 @@ public class SGLocoNetMessage : NSObject {
 
           }
 
-        // MARK: 0xEE
-            
-        case 0xee:
-          
+
+        case .opcWrSlDataP2:
           if message[1] == 0x15 {
             if message[2] == 0 && message[3] == 0x7f {
               _messageType = .setOpSwDataP2
@@ -1502,11 +2234,8 @@ public class SGLocoNetMessage : NSObject {
             }
             
           }
-          
-        // MARK: 0xEF
-            
-        case 0xef: // OPC_WR_SL_DATA
-          
+
+        case .opcWrSlData:
           if message[1] == 0x0e {
             
             if message[2] > 0 && message[ 2] <  0x78 && /* SLOT */
@@ -1540,924 +2269,18 @@ public class SGLocoNetMessage : NSObject {
         
       }
       
-      return _messageType ?? .unknown
+      return _messageType!
       
     }
     
-    set(value) {
-      _messageType = value
-    }
+//    set(value) {
+//      _messageType = value
+//    }
     
   }
+
   
-  public var boardId : Int? {
-    switch messageType {
-    case .pmRepBXP88:
-      var bid = message[2]
-      bid |= (message[1] & 0b00000001) == 0b00000001 ? 0b10000000 : 0
-      return Int(bid) + 1
-    case .iplDevData:
-      var bid = message[15]
-      bid |= (message[14] & 0b00000001) == 0b00000001 ? 0b10000000 : 0
-      return Int(bid) + 1
-    case .querySlot1, .querySlot2, .querySlot3, .querySlot4, .querySlot5:
-      if productCode == .BXP88 {
-        return Int(message[17]) + 1
-      }
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var baseAddress : UInt16? {
-    switch messageType {
-    case .s7Info, .setS7BaseAddr:
-      return (UInt16(message[13]) | (UInt16(message[14]) << 7)) + 1
-    default:
-      return nil
-    }
-  }
-
-  public var transponderZone : Int? {
-    switch messageType {
-    case .locoRep:
-      return Int(message[6]) | (Int(message[5]) << 7)
-    case .transRep:
-      return Int(message[2]) | (Int(message[1] & 0b00001111) << 7)
-
-    default:
-      return nil
-    }
-  }
-  
-  public var locomotiveAddress : UInt16? {
-    switch messageType {
-    case .locoRep:
-      let highBits = message[3] == 0x7d ? 0 : UInt16(message[3]) << 7
-      return UInt16(message[4]) | highBits
-    case .locoSlotDataP1:
-      var address = UInt16(message[4])
-      if message[9] != 0x7f {
-        address |= UInt16(message[9]) << 7
-      }
-      return address
-    case .transRep:
-      return UInt16(message[4]) | (UInt16(message[3]) << 7)
-    case .locoSlotDataP2:
-      return UInt16(message[5]) | (UInt16(message[6]) << 7)
-    default:
-      return nil
-    }
-  }
-
-  public var productCode : DigitraxProductCode? {
-    switch messageType {
-    case .iplDevData:
-      let pc = message[5] | (message[4] & 0b00000001 != 0 ? 0b10000000 : 0b00000000)
-      return DigitraxProductCode(rawValue: pc)
-    case .querySlot1:
-      return DigitraxProductCode(rawValue: message[14])
-    case .querySlot2, .querySlot3, .querySlot4, .querySlot5:
-      return DigitraxProductCode(rawValue: message[16])
-    case .s7Info, .setS7BaseAddr:
-      return DigitraxProductCode(rawValue: message[9])
-    default:
-      return nil
-    }
-  }
-
-  public var serialNumber : UInt16? {
-    switch messageType {
-    case .iplDevData:
-      let sn1 = message[11] | ((message[9] & 0b00000010) != 0 ? 0b10000000 : 0b00000000)
-      let sn2 = message[12] | ((message[9] & 0b00000100) != 0 ? 0b10000000 : 0b00000000)
-      return UInt16(sn1) | (UInt16(sn2) << 8)
-    case .querySlot1, .querySlot2, .querySlot3, .querySlot4, .querySlot5:
-      return UInt16(message[19] & 0b00111111) << 7 | UInt16(message[18])
-    case .s7Info, .setS7BaseAddr:
-      return UInt16(message[11]) | (UInt16(message[12]) << 7)
-    default:
-      return nil
-    }
-  }
-
-  public var partialSerialNumberLow : UInt16? {
-    guard let serialNumber else {
-      return nil
-    }
-    return serialNumber & 0x7f
-  }
-  
-  public var partialSerialNumberHigh : UInt16? {
-    guard let serialNumber else {
-      return nil
-    }
-    return (serialNumber >> 8) & 0x7f
-  }
-  
-
-  public var softwareVersion : Double? {
-    switch messageType {
-    case .iplDevData:
-      let sv = message[8] | (message[4] & 0b00001000 != 0 ? 0b10000000 : 0b00000000)
-      return Double((sv & 0b11111000) >> 3) + Double (sv & 0b111) / 10.0
-    case .querySlot1:
-      return Double(message[16] & 0x78) / 8.0 + Double(message[16] & 0x07) / 10.0
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var hardwareVersion : Double? {
-    switch messageType {
-    case .querySlot1:
-      let supportedProducts : Set<DigitraxProductCode> = [
-        .DCS210,
-        .DCS240,
-        .DCS210Plus,
-        .DCS240Plus,
-        .PR4
-      ]
-      if supportedProducts.contains(productCode!){
-        return Double(message[17] & 0x78) / 8.0 + Double(message[17] & 0x07) / 10.0
-      }
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var detectionSectionShorted : [Bool]? {
-    switch messageType {
-    case .pmRepBXP88:
-      if (message[3] & 0b01100000) == 0x20 {
-        var shorted = [Bool](repeating: false, count: 8)
-        var mask : UInt8 = 0b00000001
-        for index in 0...3 {
-          shorted[index + 4] = (message[3] & mask) == mask
-          shorted[index + 0] = (message[4] & mask) == mask
-          mask <<= 1
-        }
-        return shorted
-      }
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var transponderAddress : Int {
-    get {
-      var addr = Int(message[2])
-      addr |= (Int(message[1] & 0b00001111) << 7)
-      return addr + 1
-    }
-  }
-  
-  public var sensorAddress : Int? {
-    switch messageType {
-    case .sensRepGenIn:
-      var addr = Int(message[1]) << 1
-      addr |= (Int(message[2] & 0b00001111) << 8)
-      addr |= (Int(message[2] & 0b00100000) >> 5)
-      return addr + 1
-    case .sensRepTurnIn:
-      var addr = Int(message[1])
-      addr |= (Int(message[2] & 0b00001111) << 7)
-      return addr + 1
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var switchAddress : Int? {
-    switch messageType {
-    case .setSw, .setSwWithAck:
-      return Int(message[1]) | (Int(message[2] & 0x0f) << 7) + 1
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var sensorState : Bool? {
-    switch messageType {
-    case .sensRepGenIn, .sensRepTurnIn:
-      let mask : UInt8 = 0b00010000
-      return (message[2] & mask) == mask
-    case .transRep:
-      let mask : UInt8 = 0b00100000
-      return (message[1] & mask) == mask
-    default:
-      break
-    }
-    return nil
-  }
-  
-  
-  public var isSlotUpdate : Bool {
-    
-    guard slotNumber != nil else {
-      return false
-    }
-    
-    let notSlotUpdate : Set<SGLocoNetMessageType> = [
-      .locoSlotDataP1,
-      .locoSlotDataP2,
-      .getLocoSlotData
-    ]
-    
-    return !notSlotUpdate.contains(messageType)
-    
-  }
-  
-  public var slotBank : UInt8? {
-    let bankMask : UInt8 = 0b00000111
-    switch messageType {
-    case .locoSlotDataP2:
-      return message[2] & bankMask
-    case .setLocoSlotInUseP2:
-      return message[3] & bankMask
-    case .setLocoSlotDataP2:
-      return message[2] & bankMask
-    case .getLocoSlotData:
-      return message[2] & bankMask
-    case .locoSpdDirP2:
-      return message[1] & bankMask
-    case .locoF0F6P2:
-      return message[1] & bankMask
-    case .locoF7F13P2:
-      return message[1] & bankMask
-    case .locoF14F20P2:
-      return message[1] & bankMask
-    case .locoF21F28P2:
-      return message[1] & bankMask
-    case .setLocoSlotStat1P2:
-      return message[1] & bankMask
-    case .moveSlotP2:
-      return message[3] & bankMask
-    case .linkSlotsP2:
-      return message[1] & bankMask
-    case .unlinkSlotsP2:
-      return message[1] & bankMask
-    default:
-      return nil
-    }
-  }
-
-  public var slotNumber : UInt8? {
-    switch messageType {
-    case .locoSlotDataP1:
-      return message[2]
-    case .setLocoSlotInUseP1:
-      return message[2]
-    case .setLocoSlotDataP1:
-      return message[2]
-    case .locoSlotDataP2:
-      return message[3]
-    case .setLocoSlotInUseP2:
-      return message[4]
-    case .setLocoSlotDataP2:
-      return message[3]
-    case .getLocoSlotData:
-      return message[1]
-    case .locoSpdP1:
-      return message[1]
-    case .locoSpdDirP2:
-      return message[2]
-    case .locoDirF0F4P1:
-      return message[1]
-    case .locoF5F8P1:
-      return message[1]
-    case .locoF9F12P1:
-      return message[1]
-    case .locoF0F6P2:
-      return message[2]
-    case .locoF7F13P2:
-      return message[2]
-    case .locoF14F20P2:
-      return message[2]
-    case .locoF21F28P2:
-      return message[2]
-    case .setLocoSlotStat1P1:
-      return message[1]
-    case .setLocoSlotStat1P2:
-      return message[2]
-    case .moveSlotP1:
-      return message[2]
-    case .moveSlotP2:
-      return message[4]
-    case .linkSlotsP1:
-      return message[1]
-    case .unlinkSlotsP1:
-      return message[1]
-    case .linkSlotsP2:
-      return message[2]
-    case .unlinkSlotsP2:
-      return message[2]
-    case .consistDirF0F4:
-      return message[1]
-    default:
-      return nil
-    }
-  }
-
-  public var trackVoltage : Double? {
-    switch messageType {
-    case .querySlot2:
-      return Double(message[4]) * 2.0 / 10.0
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var inputVoltage : Double? {
-    switch messageType {
-    case .querySlot2:
-      return Double(message[5]) * 2.0 / 10.0
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var currentDrawn : Double? {
-    switch messageType {
-    case .querySlot2:
-      return Double(message[6]) / 10.0
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var currentLimit : Double? {
-    switch messageType {
-    case .querySlot2:
-      return Double(message[7]) / 10.0
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var railSyncVoltage : Double? {
-    switch messageType {
-    case .querySlot2:
-      return Double(message[10]) * 2.0 / 10.0
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var locoNetVoltage : Double? {
-    switch messageType {
-    case .querySlot2:
-      return Double(message[12]) * 2.0 / 10.0
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var slotsUsed : Int? {
-    switch messageType {
-    case .querySlot3:
-      return Int(message[4]) | (Int(message[5] & 0b00111111) << 7)
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var idleSlots : Int? {
-    switch messageType {
-    case .querySlot3:
-      return Int(message[6]) | (Int(message[7] & 0b00111111) << 7)
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var freeSlots : Int? {
-    switch messageType {
-    case .querySlot3:
-      return Int(message[8]) | (Int(message[9] & 0b00111111) << 7)
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var consists : Int? {
-    switch messageType {
-    case .querySlot3:
-      return Int(message[10]) | (Int(message[11] & 0b00111111) << 7)
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var subMembers : Int? {
-    switch messageType {
-    case .querySlot3:
-      return Int(message[12]) | (Int(message[13] & 0b00111111) << 7)
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var goodSGLocoNetMessages : Int? {
-    switch messageType {
-    case .querySlot4:
-      return Int(message[4]) | Int(message[5] & 0b00111111) << 7
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var badSGLocoNetMessages : Int? {
-    switch messageType {
-    case .querySlot4:
-      return Int(message[6]) | Int(message[7] & 0b00111111) << 7
-    default:
-      break
-    }
-    return nil
-  }
-
-  // THIS IS A GUESS
-  public var numberOfSleeps : Int? {
-    switch messageType {
-    case .querySlot4:
-      return Int(message[8]) | Int(message[9] & 0b00111111) << 7
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var trackFaults : Int? {
-    switch messageType {
-    case .querySlot5:
-      return Int(message[4]) | Int(message[5]) << 7
-    default:
-      break
-    }
-    return nil
-  }
-
-  // THIS IS A GUESS
-  public var autoReverseEvents : Int? {
-    switch messageType {
-    case .querySlot5:
-      return Int(message[6]) | Int(message[7]) << 7
-    default:
-      break
-    }
-    return nil
-  }
-
-  // THIS IS A GUESS
-  public var disturbances : Int? {
-    switch messageType {
-    case .querySlot5:
-      return Int(message[8]) | Int(message[9]) << 7
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var bit40 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[4] & 0b00000001 == 0b00000001
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit41 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[4] & 0b00000010 == 0b00000010
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit42 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[4] & 0b00000100 == 0b00000100
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit43 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[4] & 0b00001000 == 0b00001000
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit44 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[4] & 0b00010000 == 0b00010000
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit45 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[4] & 0b00100000 == 0b00100000
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit46 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[4] & 0b01000000 == 0b01000000
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit50 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[5] & 0b00000001 == 0b00000001
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit51 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[5] & 0b00000010 == 0b00000010
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit52 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[5] & 0b00000100 == 0b00000100
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit53 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[5] & 0b00001000 == 0b00001000
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit54 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[5] & 0b00010000 == 0b00010000
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit55 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[5] & 0b00100000 == 0b00100000
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var bit56 : Bool? {
-    switch messageType {
-    case .querySlot1:
-      return message[5] & 0b01000000 == 0b01000000
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var productName : String {
-    guard let productCode else {
-      return ""
-    }
-    return productCode.productName
-  }
-
-  public var boardIDString : String {
-    guard let boardId else {
-      return "N/A"
-    }
-    return "\(boardId)"
-  }
-
-  public var comboName : String {
-    guard let _ = productCode, let serialNumber else {
-      return ""
-    }
-    return "Digitrax \(productName) SN: \(serialNumber)"
-  }
-
-  public var slotStatus1 : UInt8? {
-    switch messageType {
-    case .locoSlotDataP1:
-      return message[3]
-    case .locoSlotDataP2:
-      return message[4]
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var slotState : LocoNetSlotState? {
-    guard let slotStatus1 else {
-      return nil
-    }
-    return LocoNetSlotState(rawValue: slotStatus1 & ~LocoNetSlotState.protectMask)
-  }
-  
-  public var consistState : ConsistState? {
-    guard let slotStatus1 else {
-      return nil
-    }
-    var state = (slotStatus1 & 0b00001000) == 0b00001000 ? 0b10 : 0b00
-    state    |= (slotStatus1 & 0b01000000) == 0b01000000 ? 0b01 : 0b00
-    return ConsistState(rawValue: state) ?? .NotLinked
-  }
-  
-  public var mobileDecoderType : SpeedSteps? {
-    guard let rawMobileDecoderType else {
-      return nil
-    }
-    return SpeedSteps(rawValue: rawMobileDecoderType)
-  }
-
-  public var rawMobileDecoderType : UInt8? {
-    switch messageType {
-    case .locoSlotDataP1:
-      return message[3] & 0b111
-    case .locoSlotDataP2:
-      return message[4] & 0b111
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var direction : LocomotiveDirection?   {
-    let directionMask : UInt8 = 0b00100000
-    switch messageType {
-    case .locoSlotDataP1:
-      return (message[6] & directionMask) == directionMask ? .reverse : .forward
-    case .locoSlotDataP2:
-      return (message[10] & directionMask) == directionMask ? .reverse : .forward
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var speed : Int? {
-    switch messageType {
-    case .locoSlotDataP1:
-      return Int(message[5])
-    case .locoSlotDataP2:
-      return Int(message[8])
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var throttleID : UInt16? {
-    switch messageType {
-    case .locoSlotDataP1:
-      var id = UInt16(message[11])
-      if message[9] == 0x7f && (message[8] & 0b100) == 0b100 {
-        id |= UInt16(message[12]) << 7
-      }
-      else {
-        id |= UInt16(message[12]) << 8
-      }
-      return id
-    case .locoSlotDataP2:
-      return UInt16(message[18]) | UInt16(message[19]) << 8
-    case .iplDevData:
-      return partialSerialNumberHigh! << 8 | partialSerialNumberLow!
-    case .zapped:
-      return UInt16(message[2])
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var functions : UInt64? {
-    switch messageType {
-    case .locoSlotDataP1:
-      
-      var fnx : UInt64 = 0
-      
-      var byte = message[6]
-      
-      fnx |= (byte & 0b00010000) == 0b00010000 ? maskF0 : 0
-      fnx |= (byte & 0b00000001) == 0b00000001 ? maskF1 : 0
-      fnx |= (byte & 0b00000010) == 0b00000010 ? maskF2 : 0
-      fnx |= (byte & 0b00000100) == 0b00000100 ? maskF3 : 0
-      fnx |= (byte & 0b00001000) == 0b00001000 ? maskF4 : 0
-      
-      byte = message[10]
-      
-      fnx |= (byte & 0b00000001) == 0b00000001 ? maskF5 : 0
-      fnx |= (byte & 0b00000010) == 0b00000010 ? maskF6 : 0
-      fnx |= (byte & 0b00000100) == 0b00000100 ? maskF7 : 0
-      fnx |= (byte & 0b00001000) == 0b00001000 ? maskF8 : 0
-
-      return fnx
-      
-    case .locoSlotDataP2:
-      
-      var fnx : UInt64 = 0
-      
-      var byte = message[9]
-
-      fnx |= (byte & 0b00010000) == 0b00010000 ? maskF12 : 0
-      fnx |= (byte & 0b00100000) == 0b00100000 ? maskF20 : 0
-      fnx |= (byte & 0b01000000) == 0b01000000 ? maskF28 : 0
-
-      byte = message[10]
-
-      fnx |= (byte & 0b00010000) == 0b00010000 ? maskF0 : 0
-      fnx |= (byte & 0b00000001) == 0b00000001 ? maskF1 : 0
-      fnx |= (byte & 0b00000010) == 0b00000010 ? maskF2 : 0
-      fnx |= (byte & 0b00000100) == 0b00000100 ? maskF3 : 0
-      fnx |= (byte & 0b00001000) == 0b00001000 ? maskF4 : 0
-
-      byte = message[11]
-
-      fnx |= (byte & 0b00000001) == 0b00000001 ? maskF5 : 0
-      fnx |= (byte & 0b00000010) == 0b00000010 ? maskF6 : 0
-      fnx |= (byte & 0b00000100) == 0b00000100 ? maskF7 : 0
-      fnx |= (byte & 0b00001000) == 0b00001000 ? maskF8 : 0
-      fnx |= (byte & 0b00010000) == 0b00010000 ? maskF9 : 0
-      fnx |= (byte & 0b00100000) == 0b00100000 ? maskF10 : 0
-      fnx |= (byte & 0b01000000) == 0b01000000 ? maskF11 : 0
-
-      byte = message[12]
-
-      fnx |= (byte & 0b01000000) == 0b01000000 ? maskF19 : 0
-      fnx |= (byte & 0b00100000) == 0b00100000 ? maskF18 : 0
-      fnx |= (byte & 0b00010000) == 0b00010000 ? maskF17 : 0
-      fnx |= (byte & 0b00001000) == 0b00001000 ? maskF16 : 0
-      fnx |= (byte & 0b00000100) == 0b00000100 ? maskF15 : 0
-      fnx |= (byte & 0b00000010) == 0b00000010 ? maskF14 : 0
-      fnx |= (byte & 0b00000001) == 0b00000001 ? maskF13 : 0
-
-      byte = message[13]
- 
-      fnx |= (byte & 0b01000000) == 0b01000000 ? maskF27 : 0
-      fnx |= (byte & 0b00100000) == 0b00100000 ? maskF26 : 0
-      fnx |= (byte & 0b00010000) == 0b00010000 ? maskF25 : 0
-      fnx |= (byte & 0b00001000) == 0b00001000 ? maskF24 : 0
-      fnx |= (byte & 0b00000100) == 0b00000100 ? maskF23 : 0
-      fnx |= (byte & 0b00000010) == 0b00000010 ? maskF22 : 0
-      fnx |= (byte & 0b00000001) == 0b00000001 ? maskF21 : 0
-
-      return fnx
-
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var isF9F28Available : Bool? {
-    switch messageType {
-    case .locoSlotDataP1:
-      return false
-    case .locoSlotDataP2:
-      return true
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var groupName : String? {
-    switch messageType {
-    case .duplexGroupData:
-      
-      var data : [UInt8] = []
-      
-      data.append(message[5] | ((message[4] & 0b00000001) == 0b00000001 ? 0x80 : 0x00))
-      data.append(message[6] | ((message[4] & 0b00000010) == 0b00000010 ? 0x80 : 0x00))
-      data.append(message[7] | ((message[4] & 0b00000100) == 0b00000100 ? 0x80 : 0x00))
-      data.append(message[8] | ((message[4] & 0b00001000) == 0b00001000 ? 0x80 : 0x00))
-
-      data.append(message[10] | ((message[9] & 0b00000001) == 0b00000001 ? 0x80 : 0x00))
-      data.append(message[11] | ((message[9] & 0b00000010) == 0b00000010 ? 0x80 : 0x00))
-      data.append(message[12] | ((message[9] & 0b00000100) == 0b00000100 ? 0x80 : 0x00))
-      data.append(message[13] | ((message[9] & 0b00001000) == 0b00001000 ? 0x80 : 0x00))
-
-      return String(bytes: data, encoding: String.Encoding.utf8)!
-      
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var groupPassword : String? {
-    switch messageType {
-    case .duplexGroupData:
-      
-      let byte1 = Int(message[15] | ((message[14] & 0b00000001) == 0b00000001 ? 0x80 : 0x00))
-      let byte2 = Int(message[16] | ((message[14] & 0b00000010) == 0b00000010 ? 0x80 : 0x00))
-
-      let char1 = byte1 >> 4
-      let char2 = byte1 & 0xf
-      let char3 = byte2 >> 4
-      let char4 = byte2 & 0xf
-
-      return String(format: "%01X%01X%01X%01X", char1, char2, char3, char4)
-
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var channelNumber : Int? {
-    switch messageType {
-    case .duplexGroupData:
-      return Int(message[17])
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var groupID : Int? {
-    switch messageType {
-    case .duplexGroupData:
-      return Int(message[18])
-    default:
-      break
-    }
-    return nil
-  }
-
-  // MARK: FastClock Properties
-  
-  public var fastClockScaleFactor : LocoNetFastClockScaleFactor {
-    get {
-      return LocoNetFastClockScaleFactor(rawValue: Int(message[3])) ?? .defaultValue
-    }
-  }
-  
-  // MARK: Class Methods
+  // MARK: Public Class Methods
   
   public static func checkSum(data: [UInt8]) -> UInt8 {
     var cs : UInt8 = 0xff
