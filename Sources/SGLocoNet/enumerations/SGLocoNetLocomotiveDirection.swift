@@ -36,7 +36,7 @@ import AppKit
 public enum SGLocoNetLocomotiveDirection : UInt8, CaseIterable, Sendable {
   
   case forward = 0b00000000
-  case reverse = 0b00100000
+  case reverse  = 0b00100000
   
   // MARK: Public Properties
   
