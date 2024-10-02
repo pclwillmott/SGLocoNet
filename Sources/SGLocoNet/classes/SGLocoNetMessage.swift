@@ -31,12 +31,13 @@
 // -----------------------------------------------------------------------------
 
 import Foundation
+import SGDCC
 
 public class SGLocoNetMessage : NSObject {
   
   // MARK: Constructors
   
-  init(data:[UInt8], appendCheckSum: Bool = false) {
+  public init(data:[UInt8], appendCheckSum: Bool = false) {
     self.message = data
     if appendCheckSum {
       self.message.append(SGLocoNetMessage.checkSum(data: message))
@@ -44,7 +45,7 @@ public class SGLocoNetMessage : NSObject {
     super.init()
   }
 
-  init(message: SGLocoNetMessage) {
+  public init(message: SGLocoNetMessage) {
     self.message = message.message
     super.init()
   }
@@ -63,8 +64,8 @@ public class SGLocoNetMessage : NSObject {
   
   public var message : [UInt8]
   
-  public var opCode : SGLocoNetMessageOpcode {
-    return SGLocoNetMessageOpcode(rawValue: message[0]) ?? .opcUnknown
+  public var opCode : SGLocoNetOpcode {
+    return SGLocoNetOpcode(rawValue: message[0]) ?? .opcUnknown
   }
   
   public var messageLength : UInt8 {
@@ -133,7 +134,7 @@ public class SGLocoNetMessage : NSObject {
     
   }
   
-  public var dccPacket : [UInt8]? {
+  public var dccPacket : SGDCCPacket? {
     
     guard messageType == .immPacket || messageType == .s7CVRW else {
       return nil
@@ -145,9 +146,9 @@ public class SGLocoNetMessage : NSObject {
     
     let count = Int((message[3] & 0b01110000) >> 4)
     
-    for i in 0...count - 1 {
+    for i in 0 ..< count {
       var im : UInt8 = message[5 + i]
-      im |= ((message[4] & mask) == mask) ? 0x80 : 0x00
+      im |= ((message[4] & mask) != 0) ? 0x80 : 0x00
       packet.append(im)
       mask <<= 1
     }
@@ -160,7 +161,7 @@ public class SGLocoNetMessage : NSObject {
     
     packet.append(crc)
     
-    return packet
+    return SGDCCPacket(packet: packet)
     
   }
   
@@ -369,6 +370,8 @@ public class SGLocoNetMessage : NSObject {
       return UInt16(message[4]) | (UInt16(message[3]) << 7)
     case .locoSlotDataP2:
       return UInt16(message[5]) | (UInt16(message[6]) << 7)
+    case .getLocoSlotDataAdrP1, .getLocoSlotDataAdrP2:
+      return UInt16(message[2]) | (UInt16(message[1]) << 7)
     default:
       return nil
     }
@@ -537,8 +540,50 @@ public class SGLocoNetMessage : NSObject {
     
   }
   
+  public var sourceSlotBank : UInt8? {
+    let bankMask : UInt8 = 0b00000011
+    switch messageType {
+    case .moveSlotP2:
+      return message[1] & bankMask
+    default:
+      return nil
+    }
+  }
+
+  public var destinationSlotBank : UInt8? {
+    let bankMask : UInt8 = 0b00000011
+    switch messageType {
+    case .moveSlotP2:
+      return message[3] & bankMask
+    default:
+      return nil
+    }
+  }
+
+  public var sourceSlotNumber : UInt8? {
+    switch messageType {
+    case .moveSlotP1:
+      return message[1]
+    case .moveSlotP2:
+      return message[2]
+    default:
+      return nil
+    }
+  }
+
+  public var destinationSlotNumber : UInt8? {
+    switch messageType {
+    case .moveSlotP1:
+      return message[2]
+    case .moveSlotP2:
+      return message[4]
+    default:
+      return nil
+    }
+  }
+
   public var slotBank : UInt8? {
-    let bankMask : UInt8 = 0b00000111
+    let bankMask : UInt8 = 0b00000011
     switch messageType {
     case .locoSlotDataP2:
       return message[2] & bankMask
@@ -560,8 +605,6 @@ public class SGLocoNetMessage : NSObject {
       return message[1] & bankMask
     case .setLocoSlotStat1P2:
       return message[1] & bankMask
-    case .moveSlotP2:
-      return message[3] & bankMask
     case .linkSlotsP2:
       return message[1] & bankMask
     case .unlinkSlotsP2:
@@ -609,10 +652,6 @@ public class SGLocoNetMessage : NSObject {
       return message[1]
     case .setLocoSlotStat1P2:
       return message[2]
-    case .moveSlotP1:
-      return message[2]
-    case .moveSlotP2:
-      return message[4]
     case .linkSlotsP1:
       return message[1]
     case .unlinkSlotsP1:
@@ -945,8 +984,10 @@ public class SGLocoNetMessage : NSObject {
     switch messageType {
     case .locoSlotDataP1:
       return message[3]
-    case .locoSlotDataP2:
+    case .locoSlotDataP2, .setLocoSlotStat1P2:
       return message[4]
+    case .setLocoSlotStat1P1:
+      return message[2]
     default:
       break
     }
@@ -981,6 +1022,10 @@ public class SGLocoNetMessage : NSObject {
       byte = message[6]
     case .locoSlotDataP2:
       byte = message[10]
+    case .locoDirF0F4P1:
+      byte = message[2]
+    case .locoSpdDirP2:
+      return (message[1] & 0b00001000) != 0 ? .reverse : .forward
     default:
       break
     }
@@ -996,6 +1041,10 @@ public class SGLocoNetMessage : NSObject {
       return message[5]
     case .locoSlotDataP2:
       return message[8]
+    case .locoSpdP1:
+      return message[2]
+    case .locoSpdDirP2:
+      return message[4]
     default:
       return nil
     }
@@ -1018,10 +1067,11 @@ public class SGLocoNetMessage : NSObject {
       return partialSerialNumberHigh! << 8 | partialSerialNumberLow!
     case .zapped:
       return UInt16(message[2])
+    case .locoSpdDirP2:
+      return UInt16(message[3])
     default:
-      break
+      return nil
     }
-    return nil
   }
 
   public var functions : [Bool] {
@@ -1036,7 +1086,17 @@ public class SGLocoNetMessage : NSObject {
       }
       
       switch messageType {
+       
+      case .locoDirF0F4P1:
         
+        mask = 0b00010000
+        process(index: 2)
+        
+        mask = 0b00000001
+        for _ in 1 ... 4 {
+          process(index: 2)
+        }
+
       case .locoSlotDataP1:
         
         mask = 0b00010000
@@ -1173,1113 +1233,1111 @@ public class SGLocoNetMessage : NSObject {
   
   public var messageType : SGLocoNetMessageType {
     
-    get {
+    if _messageType == nil {
       
-      if _messageType == nil {
+      _messageType = .unknown
+      
+      switch opCode {
         
-        _messageType = .unknown
+      case .opcBusy:
+        _messageType = .busy
+
+      case .opcGPOff:
+        _messageType = .pwrOff
+
+      case .opcGPOn:
+        _messageType = .pwrOn
+
+      case .opcIdle:
+        _messageType = .setIdleState
+
+      case .opcLocoReset:
+        _messageType = .reset
+
+      case .opcLocoSpd:
+        if message[1] > 0 && message[1] < 0x78 {
+          _messageType = .locoSpdP1
+        }
+
+      case .opcLocoDirF:
+        if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b01000000) == 0x00 {
+          _messageType = .locoDirF0F4P1
+        }
+
+      case .opcLocoSnd:
+        if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b11110000) == 0x00 {
+          _messageType = .locoF5F8P1
+        }
+
+      case .opcLocoSnd2:
+        if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b11110000) == 0x00 {
+          _messageType = .locoF9F12P1
+        }
+
+      case .opcSwReq:
+        if (message[1] & 0b01111000) == 0b01111000 && (message[2] & 0b11011111) == 0b00000111 {
+          _messageType = .interrogate
+        }
+        else if (message[2] & 0b11000000) == 0b00000000 {
+          _messageType = .setSw
+        }
+
+      case .opcSwRep:
+        let test = message[2] & 0b11000000
+        switch test {
+        case 0b01000000:
+          _messageType = .sensRepTurnIn
+        case 0b00000000:
+          _messageType = .sensRepTurnOut
+        default:
+          break
+        }
         
-        switch opCode {
+      case .opcInputRep:
+        if (message[2] & 0b11000000) == 0b01000000 {
+          _messageType = .sensRepGenIn
+        }
+
+      case .opcLongAck:
+        switch message[1] {
+        case 0x30:
+          switch message[2] {
+          case 0x00:
+            _messageType = .setSwRejected
+          case 0x7f:
+            _messageType = .setSwAccepted
+          default:
+            break
+          }
+        case 0x38:
+          switch message[2] {
+          case 0x00:
+            _messageType = .invalidUnlinkP1
+          default:
+            break
+          }
+        case 0x39:
+          switch message[2] {
+          case 0x00:
+            _messageType = .invalidLinkP1
+          default:
+            break
+          }
+        case 0x3a:
+          switch message[2] {
+          case 0x00:
+            _messageType = .illegalMoveP1
+          default:
+            break
+          }
+        case 0x3b:
+          switch message[2] {
+          case 0x00:
+            _messageType = .slotNotImplemented
+          default:
+            break
+          }
+        case 0x3c:
+          _messageType = .swState
+        case 0x3d:
+          switch message[2] {
+          case 0x00:
+            _messageType = .setSwWithAckRejected
+          case 0x7f:
+            _messageType = .setSwWithAckAccepted
+          default:
+            break
+          }
+        case 0x3e:
+          switch message[2] {
+          case 0x00:
+            _messageType = .noFreeSlotsP2
+          default:
+            break
+          }
+        case 0x3f:
+          switch message[2] {
+          case 0x00:
+            _messageType = .noFreeSlotsP1
+          default:
+            break
+          }
+        case 0x50:
+          if (message[2] & 0b01011111) == 0b00010000 {
+            _messageType = .brdOpSwState
+          }
+          else if message[2] == 0x7f {
+            _messageType = .setBrdOpSwOK
+          }
+        case 0x54:
+          switch message[2] {
+          case 0x00:
+            _messageType = .d4Error
+          default:
+            break
+          }
+        case 0x55:
+          _messageType = .zapped
+        case 0x6d:
+          switch message[2] {
+            case 0x00:
+            _messageType = .immPacketBufferFull
+            case 0x7f:
+            _messageType = .immPacketOK
+          default:
+            _messageType = .s7CVState
+            break
+          }
+        case 0x6e:
+          switch message[2] {
+          case 0x00:
+            _messageType = .routesDisabled
+          case 0x7f:
+            _messageType = .setSlotDataOKP2
+          default:
+            _messageType = .s7CVState
+            break
+          }
+        case 0x6f:
+          switch message[2] {
+          case 0x00:
+            _messageType = .programmerBusy
+          case 0x01:
+            _messageType = .progCmdAccepted
+          case 0x40:
+            _messageType = .progCmdAcceptedBlind
+          case 0x7f:
+            _messageType = .setSlotDataOKP1
+          default:
+            break
+          }
+        case 0x7e:
+          _messageType = .immPacketLMOK
+       default:
+          break
+        }
+
+      case .opcSlotStat1:
+        if message[1] > 0 && message[1] < 0x78 {
+          _messageType = .setLocoSlotStat1P1
+        }
+
+      case .opcConsistFunc:
+        if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b11100000) == 0 {
+          _messageType = .consistDirF0F4
+        }
+
+      case .opcUnlinkSlots:
+        if message[1] > 0 && message[1] < 0x78 && message[2] > 0 && message[2] < 0x78 {
+          _messageType = .unlinkSlotsP1
+        }
+
+      case .opcLinkSlots:
+        if message[1] > 0 && message[1] < 0x78 && message[2] > 0 && message[2] < 0x78 {
+          _messageType = .linkSlotsP1
+        }
+
+      case .opcMoveSlots:
+        if message[1] == 0x00 {
+          _messageType = .dispatchGetP1
+        }
+        else if message[2] == 0x00 && message[1] > 0 && message[1] < 0x78 {
+          _messageType = .dispatchPutP1
+        }
+        else if message[1] == message[2] && message[1] > 0 && message[1] < 0x78 {
+          _messageType = .setLocoSlotInUseP1
+        }
+        else if message[1] < 0x78 && message[2] < 0x78 {
+          _messageType = .moveSlotP1
+        }
+
+      case .opcRqSlData:
+        if message[2] == 0x00 {
           
-        case .opcBusy:
-          _messageType = .busy
-
-        case .opcGPOff:
-          _messageType = .pwrOff
-
-        case .opcGPOn:
-          _messageType = .pwrOn
-
-        case .opcIdle:
-          _messageType = .setIdleState
-
-        case .opcLocoReset:
-          _messageType = .reset
-
-        case .opcLocoSpd:
-          if message[1] > 0 && message[1] < 0x78 {
-            _messageType = .locoSpdP1
+          switch message[1] {
+          case 0x78:
+            break
+          case 0x79:
+            break
+          case 0x7a:
+            break
+          case 0x7b:
+            _messageType = .getFastClockData
+          case 0x7c:
+            break
+          case 0x7d:
+            break
+          case 0x7e:
+            _messageType = .getOpSwDataBP1
+          case 0x7f:
+            _messageType = .getOpSwDataAP1
+          default:
+            _messageType = .getLocoSlotData
           }
+          
+        }
+        else if message[1] >= 0x78 && message[1] <= 0x7c && message[2] == 0x41 {
+          _messageType = .getQuerySlot
+        }
+        else if message[1] == 0x7e && message[2] == 0x40 {
+          _messageType = .getOpSwDataP2
+        }
+        else if message[1] == 0x7f && message[2] == 0x40 {
+          _messageType = .getOpSwDataP2
+        }
+        else if message[1] < 0x78 && (message[2] & 0b10111000) == 0 {
+          _messageType = .getLocoSlotData
+        }
 
-        case .opcLocoDirF:
-          if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b01000000) == 0x00 {
-            _messageType = .locoDirF0F4P1
-          }
+      case .opcSwState:
+        if (message[2] & 0b01000000) == 0 {
+          _messageType = .getSwState
+        }
 
-        case .opcLocoSnd:
-          if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b11110000) == 0x00 {
-            _messageType = .locoF5F8P1
-          }
+      case .opcSwAck:
+        if (message[2] & 0b11000000) == 0 {
+          _messageType = .setSwWithAck
+        }
 
-        case .opcLocoSnd2:
-          if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b11110000) == 0x00 {
-            _messageType = .locoF9F12P1
-          }
+      case .opcLocoAdrP2:
+        _messageType = .getLocoSlotDataAdrP2
 
-        case .opcSwReq:
-          if (message[1] & 0b01111000) == 0b01111000 && (message[2] & 0b11011111) == 0b00000111 {
-            _messageType = .interrogate
-          }
-          else if (message[2] & 0b11000000) == 0b00000000 {
-            _messageType = .setSw
-          }
+      case .opcLocoAdr:
+        _messageType = .getLocoSlotDataAdrP1
 
-        case .opcSwRep:
-          let test = message[2] & 0b11000000
-          switch test {
-          case 0b01000000:
-            _messageType = .sensRepTurnIn
+      case .opcD0Group:
+        if (message[1] & 0b11111110) == 0b01100010 && (message[3] & 0b11110000) == 0b01110000 {
+          _messageType = .getBrdOpSwState
+        }
+        else if (message[1] & 0b11111110) == 0b01110010 && (message[3] & 0b11110000) == 0b01110000 {
+          _messageType = .setBrdOpSwState
+        }
+        else if message[1] == 0x60 && (message[4] & 0b11111110) == 0 {
+          _messageType = .trkShortRep
+        }
+        else if message[1] & 0b11111110 == 0b01100010 && (message[3] & 0b11110000) == 0b00110000 && (message[4] & 0b11100000) == 0 {
+          _messageType = .pmRep
+        }
+        else if message[1] & 0b01111110 == 0b01100010 && (message[3] & 0b10010000) == 0 && (message[4] & 0b10010000) == 0 {
+          _messageType = .pmRepBXP88
+        }
+        else if (message[1] & 0b11010000) == 0 {
+          _messageType = .transRep
+        }
+
+      case .opcPrMode:
+        if message[1] == 0x10 && (message[2] & 0b11111100) == 0 && message[3] == 0x00 && message[4] == 0x00 {
+          _messageType = .prMode
+        }
+
+      case .opcD4Group:
+        if (message[1] & 0b11111000) == 0b00100000 {
+          
+          let subCode = message[3]
+
+          switch subCode {
+          case 0x05 :
+            _messageType = .locoF12F20F28P2
+          case 0x08:
+            _messageType = .locoF13F19P2
+          case 0x09:
+            _messageType = .locoF21F27P2
+          default:
+            break
+          }
+        }
+        else if (message[1] & 0b11111000) == 0b00111000 {
+          
+          let subCode = message[3] & 0b11111000
+          
+          let srcPage = message[1] & 0b00000111
+          let src = message[2]
+          let dstPage = message[3] & 0b00000111
+          let dst = message[4]
+          
+          switch subCode {
           case 0b00000000:
-            _messageType = .sensRepTurnOut
+            
+            if message[2] == 0x00 && (message[3] & 0b11111000) == 0 {
+              _messageType = .dispatchGetP2
+            }
+            else if message[3] == 0 && dst == 0 && src > 0 && src < 0x78 {
+              _messageType = .dispatchPutP2
+            }
+            else if srcPage == dstPage && src == dst && src > 0 && src > 0 && src < 0x78 && (message[3] & 0b11111000) == 0 {
+              _messageType = .setLocoSlotInUseP2
+            }
+            else if src > 0 && src < 0x78 && dst > 0 && dst < 0x78 && (message[3] & 0b11111000) == 0 {
+              _messageType = .moveSlotP2
+            }
+            
+          case 0b01000000:
+            
+            if src > 0 && src < 0x78 && dst > 0 && dst < 0x78 {
+              _messageType = .linkSlotsP2
+            }
+            
+          case 0b01100000:
+            
+            if src > 0 && src < 0x78 {
+              _messageType = .setLocoSlotStat1P2
+            }
+            
+          case 0b01010000:
+            
+            if src > 0 && src < 0x78 && dst > 0 && dst < 0x78 {
+              _messageType = .unlinkSlotsP2
+            }
+            
           default:
             break
           }
           
-        case .opcInputRep:
-          if (message[2] & 0b11000000) == 0b01000000 {
-            _messageType = .sensRepGenIn
-          }
+        }
 
-        case .opcLongAck:
-          switch message[1] {
-          case 0x30:
-            switch message[2] {
-            case 0x00:
-              _messageType = .setSwRejected
-            case 0x7f:
-              _messageType = .setSwAccepted
-            default:
-              break
-            }
-          case 0x38:
-            switch message[2] {
-            case 0x00:
-              _messageType = .invalidUnlinkP1
-            default:
-              break
-            }
-          case 0x39:
-            switch message[2] {
-            case 0x00:
-              _messageType = .invalidLinkP1
-            default:
-              break
-            }
-          case 0x3a:
-            switch message[2] {
-            case 0x00:
-              _messageType = .illegalMoveP1
-            default:
-              break
-            }
-          case 0x3b:
-            switch message[2] {
-            case 0x00:
-              _messageType = .slotNotImplemented
-            default:
-              break
-            }
-          case 0x3c:
-            _messageType = .swState
-          case 0x3d:
-            switch message[2] {
-            case 0x00:
-              _messageType = .setSwWithAckRejected
-            case 0x7f:
-              _messageType = .setSwWithAckAccepted
-            default:
-              break
-            }
-          case 0x3e:
-            switch message[2] {
-            case 0x00:
-              _messageType = .noFreeSlotsP2
-            default:
-              break
-            }
-          case 0x3f:
-            switch message[2] {
-            case 0x00:
-              _messageType = .noFreeSlotsP1
-            default:
-              break
-            }
-          case 0x50:
-            if (message[2] & 0b01011111) == 0b00010000 {
-              _messageType = .brdOpSwState
-            }
-            else if message[2] == 0x7f {
-              _messageType = .setBrdOpSwOK
-            }
-          case 0x54:
-            switch message[2] {
-            case 0x00:
-              _messageType = .d4Error
-            default:
-              break
-            }
-          case 0x55:
-            _messageType = .zapped
-          case 0x6d:
-            switch message[2] {
-              case 0x00:
-              _messageType = .immPacketBufferFull
-              case 0x7f:
-              _messageType = .immPacketOK
-            default:
-              _messageType = .s7CVState
-              break
-            }
-          case 0x6e:
-            switch message[2] {
-            case 0x00:
-              _messageType = .routesDisabled
-            case 0x7f:
-              _messageType = .setSlotDataOKP2
-            default:
-              _messageType = .s7CVState
-              break
-            }
-          case 0x6f:
-            switch message[2] {
-            case 0x00:
-              _messageType = .programmerBusy
-            case 0x01:
-              _messageType = .progCmdAccepted
-            case 0x40:
-              _messageType = .progCmdAcceptedBlind
-            case 0x7f:
-              _messageType = .setSlotDataOKP1
-            default:
-              break
-            }
-          case 0x7e:
-            _messageType = .immPacketLMOK
-         default:
+      case .opcD5Group:
+        if message[2] > 0 && message[2] < 0x78 {
+          
+          let subCode = message[1] & 0b11111000
+          
+          switch subCode {
+          case 0b00000000, 0b00001000:
+            _messageType = .locoSpdDirP2
+          case 0b00010000:
+            _messageType = .locoF0F6P2
+          case 0b00011000:
+            _messageType = .locoF7F13P2
+          case 0b00100000:
+            _messageType = .locoF14F20P2
+          case 0b00101000, 0b00110000:
+            _messageType = .locoF21F28P2
+          default:
             break
           }
+          
+        }
 
-        case .opcSlotStat1:
-          if message[1] > 0 && message[1] < 0x78 {
-            _messageType = .setLocoSlotStat1P1
+
+      case .opcD7Group:
+        if message[2] == 0 && (message[3] & 0b11110000) == 0 && (message[4] == 0x20 || message[4] == 0x7f) {
+          _messageType = .receiverRep
+        }
+
+      case .opcDFGroup:
+        if message[1] == 0x00 && message[2] == 0x00 && message[3] == 0x00 && message[4] == 0x00 {
+          _messageType = .findReceiver
+        }
+        else if message[1] == 0x40 && message[2] == 0x1f && (message[3] & 0b11111000) == 0 && message[4] == 0x00 {
+          _messageType = .setLocoNetID
+        }
+
+      case .opcPeerXfer:
+        switch message[1] {
+          
+        case 0x09:
+          
+          if message[2] == 0x01 &&
+             message[3] == 0x00 {
+            _messageType = .ezRouteConfirm
+          }
+          else if message[2] == 0x40 &&
+             message[5] == 0x00 &&
+             message[6] == 0x00 &&
+             message[7] == 0x00 {
+            _messageType = .findLoco
+          }
+          else if message[2] == 0x00 &&
+            (message[5] & 0b11110000) == 0 &&
+             message[7] == 0x00 {
+            _messageType = .locoRep
           }
 
-        case .opcConsistFunc:
-          if message[1] > 0 && message[1] < 0x78 && (message[2] & 0b11100000) == 0 {
-            _messageType = .consistDirF0F4
+        case 0x10:
+          
+          if message[ 2] == 0x22 &&
+             message[ 3] == 0x22 &&
+             message[ 4] == 0x01 &&
+             message[ 5] == 0x00 &&
+             (message[8] & 0b11110000) == 0b00010000 &&
+             message[10] == 0x00 {
+            _messageType = .interfaceData
           }
-
-        case .opcUnlinkSlots:
-          if message[1] > 0 && message[1] < 0x78 && message[2] > 0 && message[2] < 0x78 {
-            _messageType = .unlinkSlotsP1
+          else if message[ 2] == 0x50 &&
+             message[ 3] == 0x50 &&
+             message[ 4] == 0x01 &&
+            (message[ 5] & 0b11110000) == 0x00 &&
+            (message[10] & 0b11110000) == 0x00 {
+            _messageType = .interfaceDataLB
           }
-
-        case .opcLinkSlots:
-          if message[1] > 0 && message[1] < 0x78 && message[2] > 0 && message[2] < 0x78 {
-            _messageType = .linkSlotsP1
+          else if message[ 2] == 0x22 &&
+             message[ 3] == 0x22 &&
+             message[ 4] == 0x01 &&
+             message[ 5] == 0x00 &&
+             message[10] == 0x00 {
+            _messageType = .interfaceDataPR3
           }
-
-        case .opcMoveSlots:
-          if message[1] == 0x00 {
-            _messageType = .dispatchGetP1
-          }
-          else if message[2] == 0x00 && message[1] > 0 && message[1] < 0x78 {
-            _messageType = .dispatchPutP1
-          }
-          else if message[1] == message[2] && message[1] > 0 && message[1] < 0x78 {
-            _messageType = .setLocoSlotInUseP1
-          }
-          else if message[1] < 0x78 && message[2] < 0x78 {
-            _messageType = .moveSlotP1
-          }
-
-        case .opcRqSlData:
-          if message[2] == 0x00 {
+          else if message[2] == 0x7f &&
+             message[3] == 0x7f &&
+             message[4] == 0x7f &&
+            (message[5] & 0b11110000) == 0b01000000 {
             
-            switch message[1] {
-            case 0x78:
-              break
-            case 0x79:
-              break
-            case 0x7a:
-              break
-            case 0x7b:
-              _messageType = .getFastClockData
-            case 0x7c:
-              break
-            case 0x7d:
-              break
-            case 0x7e:
-              _messageType = .getOpSwDataBP1
-            case 0x7f:
-              _messageType = .getOpSwDataAP1
-            default:
-              _messageType = .getLocoSlotData
-            }
-            
-          }
-          else if message[1] >= 0x78 && message[1] <= 0x7c && message[2] == 0x41 {
-            _messageType = .getQuerySlot
-          }
-          else if message[1] == 0x7e && message[2] == 0x40 {
-            _messageType = .getOpSwDataP2
-          }
-          else if message[1] == 0x7f && message[2] == 0x40 {
-            _messageType = .getOpSwDataP2
-          }
-          else if message[1] < 0x78 && (message[2] & 0b10111000) == 0 {
-            _messageType = .getLocoSlotData
-          }
-
-        case .opcSwState:
-          if (message[2] & 0b01000000) == 0 {
-            _messageType = .getSwState
-          }
-
-        case .opcSwAck:
-          if (message[2] & 0b11000000) == 0 {
-            _messageType = .setSwWithAck
-          }
-
-        case .opcLocoAdrP2:
-          _messageType = message[1] == 0 ? .getLocoSlotDataSAdrP2 : .getLocoSlotDataLAdrP2
-
-        case .opcLocoAdr:
-          _messageType = message[1] == 0 ? .getLocoSlotDataSAdrP1 : .getLocoSlotDataLAdrP1
-
-        case .opcD0Group:
-          if (message[1] & 0b11111110) == 0b01100010 && (message[3] & 0b11110000) == 0b01110000 {
-            _messageType = .getBrdOpSwState
-          }
-          else if (message[1] & 0b11111110) == 0b01110010 && (message[3] & 0b11110000) == 0b01110000 {
-            _messageType = .setBrdOpSwState
-          }
-          else if message[1] == 0x60 && (message[4] & 0b11111110) == 0 {
-            _messageType = .trkShortRep
-          }
-          else if message[1] & 0b11111110 == 0b01100010 && (message[3] & 0b11110000) == 0b00110000 && (message[4] & 0b11100000) == 0 {
-            _messageType = .pmRep
-          }
-          else if message[1] & 0b01111110 == 0b01100010 && (message[3] & 0b10010000) == 0 && (message[4] & 0b10010000) == 0 {
-            _messageType = .pmRepBXP88
-          }
-          else if (message[1] & 0b11010000) == 0 {
-            _messageType = .transRep
-          }
-
-        case .opcPrMode:
-          if message[1] == 0x10 && (message[2] & 0b11111100) == 0 && message[3] == 0x00 && message[4] == 0x00 {
-            _messageType = .prMode
-          }
-
-        case .opcD4Group:
-          if (message[1] & 0b11111000) == 0b00100000 {
-            
-            let subCode = message[3]
-  
-            switch subCode {
-            case 0x05 :
-              _messageType = .locoF12F20F28P2
-            case 0x08:
-              _messageType = .locoF13F19P2
-            case 0x09:
-              _messageType = .locoF21F27P2
-            default:
-              break
-            }
-          }
-          else if (message[1] & 0b11111000) == 0b00111000 {
-            
-            let subCode = message[3] & 0b11111000
-            
-            let srcPage = message[1] & 0b00000111
-            let src = message[2]
-            let dstPage = message[3] & 0b00000111
-            let dst = message[4]
+            let subCode = message[10] & 0b11110000
             
             switch subCode {
             case 0b00000000:
-              
-              if message[2] == 0x00 && (message[3] & 0b11111000) == 0 {
-                _messageType = .dispatchGetP2
+              if message[12] == 0x00 &&
+                 message[14] == 0x00 {
+                _messageType = .iplSetup
               }
-              else if message[3] == 0 && dst == 0 && src > 0 && src < 0x78 {
-                _messageType = .dispatchPutP2
-              }
-              else if srcPage == dstPage && src == dst && src > 0 && src > 0 && src < 0x78 && (message[3] & 0b11111000) == 0 {
-                _messageType = .setLocoSlotInUseP2
-              }
-              else if src > 0 && src < 0x78 && dst > 0 && dst < 0x78 && (message[3] & 0b11111000) == 0 {
-                _messageType = .moveSlotP2
-              }
-              
-            case 0b01000000:
-              
-              if src > 0 && src < 0x78 && dst > 0 && dst < 0x78 {
-                _messageType = .linkSlotsP2
-              }
-              
-            case 0b01100000:
-              
-              if src > 0 && src < 0x78 {
-                _messageType = .setLocoSlotStat1P2
-              }
-              
-            case 0b01010000:
-              
-              if src > 0 && src < 0x78 && dst > 0 && dst < 0x78 {
-                _messageType = .unlinkSlotsP2
-              }
-              
-            default:
               break
-            }
-            
-          }
-
-        case .opcD5Group:
-          if message[2] > 0 && message[2] < 0x78 {
-            
-            let subCode = message[1] & 0b11111000
-            
-            switch subCode {
-            case 0b00000000, 0b00001000:
-              _messageType = .locoSpdDirP2
             case 0b00010000:
-              _messageType = .locoF0F6P2
-            case 0b00011000:
-              _messageType = .locoF7F13P2
+              if message[9 ] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 {
+                _messageType = .iplSetAddr
+              }
             case 0b00100000:
-              _messageType = .locoF14F20P2
-            case 0b00101000, 0b00110000:
-              _messageType = .locoF21F28P2
+              _messageType = .iplDataLoad
+            case 0b01000000:
+              if message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 {
+                _messageType = .iplEndLoad
+              }
             default:
               break
             }
-            
           }
-
-
-        case .opcD7Group:
-          if message[2] == 0 && (message[3] & 0b11110000) == 0 && (message[4] == 0x20 || message[4] == 0x7f) {
-            _messageType = .receiverRep
-          }
-
-        case .opcDFGroup:
-          if message[1] == 0x00 && message[2] == 0x00 && message[3] == 0x00 && message[4] == 0x00 {
-            _messageType = .findReceiver
-          }
-          else if message[1] == 0x40 && message[2] == 0x1f && (message[3] & 0b11111000) == 0 && message[4] == 0x00 {
-            _messageType = .setLocoNetID
-          }
-
-        case .opcPeerXfer:
-          switch message[1] {
-            
-          case 0x09:
-            
-            if message[2] == 0x01 &&
-               message[3] == 0x00 {
-              _messageType = .ezRouteConfirm
-            }
-            else if message[2] == 0x40 &&
-               message[5] == 0x00 &&
-               message[6] == 0x00 &&
-               message[7] == 0x00 {
-              _messageType = .findLoco
-            }
-            else if message[2] == 0x00 &&
-              (message[5] & 0b11110000) == 0 &&
-               message[7] == 0x00 {
-              _messageType = .locoRep
-            }
-
-          case 0x10:
-            
-            if message[ 2] == 0x22 &&
-               message[ 3] == 0x22 &&
-               message[ 4] == 0x01 &&
-               message[ 5] == 0x00 &&
-               (message[8] & 0b11110000) == 0b00010000 &&
-               message[10] == 0x00 {
-              _messageType = .interfaceData
-            }
-            else if message[ 2] == 0x50 &&
-               message[ 3] == 0x50 &&
-               message[ 4] == 0x01 &&
-              (message[ 5] & 0b11110000) == 0x00 &&
-              (message[10] & 0b11110000) == 0x00 {
-              _messageType = .interfaceDataLB
-            }
-            else if message[ 2] == 0x22 &&
-               message[ 3] == 0x22 &&
-               message[ 4] == 0x01 &&
-               message[ 5] == 0x00 &&
-               message[10] == 0x00 {
-              _messageType = .interfaceDataPR3
-            }
-            else if message[2] == 0x7f &&
-               message[3] == 0x7f &&
-               message[4] == 0x7f &&
-              (message[5] & 0b11110000) == 0b01000000 {
-              
-              let subCode = message[10] & 0b11110000
-              
-              switch subCode {
-              case 0b00000000:
-                if message[12] == 0x00 &&
-                   message[14] == 0x00 {
-                  _messageType = .iplSetup
-                }
-                break
-              case 0b00010000:
-                if message[9 ] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 {
-                  _messageType = .iplSetAddr
-                }
-              case 0b00100000:
-                _messageType = .iplDataLoad
-              case 0b01000000:
-                if message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 {
-                  _messageType = .iplEndLoad
-                }
-              default:
-                break
+          
+        case 0x14:
+          
+          switch message[2] {
+          case 0x02:
+            switch message[3] {
+            case 0x00:
+              if message[4 ] == 0x00 &&
+                 message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .setDuplexGroupChannel
               }
-            }
-            
-          case 0x14:
-            
-            switch message[2] {
-            case 0x02:
-              switch message[3] {
-              case 0x00:
-                if message[4 ] == 0x00 &&
-                   message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .setDuplexGroupChannel
-                }
-              case 0x08:
-                if message[4 ] == 0x00 &&
-                   message[5 ] == 0x00 &&
-                   message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .getDuplexGroupChannel
-                }
-              case 0x10:
-                if message[4 ] == 0x00 &&
-                   message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .duplexGroupChannel
-                }
-              default:
-                break
+            case 0x08:
+              if message[4 ] == 0x00 &&
+                 message[5 ] == 0x00 &&
+                 message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .getDuplexGroupChannel
               }
-            case 0x03:
-              switch message[3] {
-              case 0x00:
+            case 0x10:
+              if message[4 ] == 0x00 &&
+                 message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .duplexGroupChannel
+              }
+            default:
+              break
+            }
+          case 0x03:
+            switch message[3] {
+            case 0x00:
+              if (message[4 ] & 0b11110000) == 0 &&
+                 (message[9 ] & 0b11110000) == 0 &&
+                 (message[14] & 0b11110000) == 0 {
+                _messageType = .setDuplexGroupData
+              }
+            case 0x08:
+              if message[4 ] == 0x00 &&
+                 message[5 ] == 0x00 &&
+                 message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .getDuplexGroupData
+              }
+            case 0x10:
                 if (message[4 ] & 0b11110000) == 0 &&
                    (message[9 ] & 0b11110000) == 0 &&
                    (message[14] & 0b11110000) == 0 {
-                  _messageType = .setDuplexGroupData
+                  _messageType = .duplexGroupData
                 }
-              case 0x08:
-                if message[4 ] == 0x00 &&
-                   message[5 ] == 0x00 &&
-                   message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .getDuplexGroupData
-                }
-              case 0x10:
-                  if (message[4 ] & 0b11110000) == 0 &&
-                     (message[9 ] & 0b11110000) == 0 &&
-                     (message[14] & 0b11110000) == 0 {
-                    _messageType = .duplexGroupData
-                  }
-              default:
-                break
+            default:
+              break
+            }
+          case 0x04:
+            switch message[3] {
+            case 0x00:
+              if message[4 ] == 0x00 &&
+                 message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .setDuplexGroupID
               }
-            case 0x04:
-              switch message[3] {
-              case 0x00:
-                if message[4 ] == 0x00 &&
-                   message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .setDuplexGroupID
-                }
-              case 0x08:
-                if message[4 ] == 0x00 &&
-                   message[5 ] == 0x00 &&
-                   message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .getDuplexGroupID
-                }
-              case 0x10:
-                if message[4 ] == 0x00 &&
-                   message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .duplexGroupID
-                }
-              default:
-                break
-              }
-            case 0x07:
-              switch message[3] {
-              case 0x00:
-                if (message[4 ] & 0b11110000) == 0 &&
-                    message[9 ] == 0x00 &&
-                    message[10] == 0x00 &&
-                    message[11] == 0x00 &&
-                    message[12] == 0x00 &&
-                    message[13] == 0x00 &&
-                    message[14] == 0x00 &&
-                    message[15] == 0x00 &&
-                    message[16] == 0x00 &&
-                    message[17] == 0x00 &&
-                    message[18] == 0x00 {
-                  _messageType = .setDuplexGroupPassword
-                }
-              case 0x08:
-                if message[4 ] == 0x00 &&
-                   message[5 ] == 0x00 &&
-                   message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .getDuplexGroupPassword
-                }
-              case 0x10:
-                if message[4 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .duplexGroupPassword
-                }
-              default:
-                break
-              }
-            case 0x0f:
-              switch message[3] {
-              case 0x08:
-                if message[4 ] == 0x00 &&
-                   message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x01 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .iplDiscover
-                }
-              case 0x10:
-                if (message[4 ] & 0b11110000) == 0x00 &&
-                   (message[9 ] & 0b11110000) == 0x00 &&
-                   (message[14] & 0b11110000) == 0x00 {
-                  _messageType = .iplDevData
-                }
-              default:
-                break
+            case 0x08:
+              if message[4 ] == 0x00 &&
+                 message[5 ] == 0x00 &&
+                 message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .getDuplexGroupID
               }
             case 0x10:
-              switch message[3] {
-              case 0x08:
-                if message[4 ] == 0x00 &&
-                   message[6 ] == 0x00 &&
-                   message[7 ] == 0x00 &&
-                   message[8 ] == 0x00 &&
-                   message[9 ] == 0x00 &&
-                   message[10] == 0x00 &&
-                   message[11] == 0x00 &&
-                   message[12] == 0x00 &&
-                   message[13] == 0x00 &&
-                   message[14] == 0x00 &&
-                   message[15] == 0x00 &&
-                   message[16] == 0x00 &&
-                   message[17] == 0x00 &&
-                   message[18] == 0x00 {
-                  _messageType = .getDuplexSignalStrength
-                }
-              case 0x10:
-                if (message[4 ] & 0b11110000) == 0 &&
-                    message[9 ] == 0x00 &&
-                    message[10] == 0x00 &&
-                    message[11] == 0x00 &&
-                    message[12] == 0x00 &&
-                    message[13] == 0x00 &&
-                    message[14] == 0x00 &&
-                    message[15] == 0x00 &&
-                    message[16] == 0x00 &&
-                    message[17] == 0x00 &&
-                    message[18] == 0x00 {
-                  _messageType = .duplexSignalStrength
-                }
-                else if (message[4 ] & 0b11110000) == 0 &&
-                    message[ 5] != 0x00 &&
-                    message[ 6] != 0x00 &&
-                    message[ 7] != 0x00 &&
-                    message[ 8] != 0x00 &&
-                    (message[9] & 0b11110000) == 0x00 &&
-                    message[10] != 0x00 &&
-                    message[11] != 0x00 &&
-                    message[12] != 0x00 &&
-                    message[13] != 0x00 &&
-                   (message[14] & 0b11110000) == 0x00 {
-                  _messageType = .lnwiData
-                }
-
-              default:
-                break
+              if message[4 ] == 0x00 &&
+                 message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .duplexGroupID
               }
-              
             default:
               break
             }
+          case 0x07:
+            switch message[3] {
+            case 0x00:
+              if (message[4 ] & 0b11110000) == 0 &&
+                  message[9 ] == 0x00 &&
+                  message[10] == 0x00 &&
+                  message[11] == 0x00 &&
+                  message[12] == 0x00 &&
+                  message[13] == 0x00 &&
+                  message[14] == 0x00 &&
+                  message[15] == 0x00 &&
+                  message[16] == 0x00 &&
+                  message[17] == 0x00 &&
+                  message[18] == 0x00 {
+                _messageType = .setDuplexGroupPassword
+              }
+            case 0x08:
+              if message[4 ] == 0x00 &&
+                 message[5 ] == 0x00 &&
+                 message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .getDuplexGroupPassword
+              }
+            case 0x10:
+              if message[4 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .duplexGroupPassword
+              }
+            default:
+              break
+            }
+          case 0x0f:
+            switch message[3] {
+            case 0x08:
+              if message[4 ] == 0x00 &&
+                 message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x01 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .iplDiscover
+              }
+            case 0x10:
+              if (message[4 ] & 0b11110000) == 0x00 &&
+                 (message[9 ] & 0b11110000) == 0x00 &&
+                 (message[14] & 0b11110000) == 0x00 {
+                _messageType = .iplDevData
+              }
+            default:
+              break
+            }
+          case 0x10:
+            switch message[3] {
+            case 0x08:
+              if message[4 ] == 0x00 &&
+                 message[6 ] == 0x00 &&
+                 message[7 ] == 0x00 &&
+                 message[8 ] == 0x00 &&
+                 message[9 ] == 0x00 &&
+                 message[10] == 0x00 &&
+                 message[11] == 0x00 &&
+                 message[12] == 0x00 &&
+                 message[13] == 0x00 &&
+                 message[14] == 0x00 &&
+                 message[15] == 0x00 &&
+                 message[16] == 0x00 &&
+                 message[17] == 0x00 &&
+                 message[18] == 0x00 {
+                _messageType = .getDuplexSignalStrength
+              }
+            case 0x10:
+              if (message[4 ] & 0b11110000) == 0 &&
+                  message[9 ] == 0x00 &&
+                  message[10] == 0x00 &&
+                  message[11] == 0x00 &&
+                  message[12] == 0x00 &&
+                  message[13] == 0x00 &&
+                  message[14] == 0x00 &&
+                  message[15] == 0x00 &&
+                  message[16] == 0x00 &&
+                  message[17] == 0x00 &&
+                  message[18] == 0x00 {
+                _messageType = .duplexSignalStrength
+              }
+              else if (message[4 ] & 0b11110000) == 0 &&
+                  message[ 5] != 0x00 &&
+                  message[ 6] != 0x00 &&
+                  message[ 7] != 0x00 &&
+                  message[ 8] != 0x00 &&
+                  (message[9] & 0b11110000) == 0x00 &&
+                  message[10] != 0x00 &&
+                  message[11] != 0x00 &&
+                  message[12] != 0x00 &&
+                  message[13] != 0x00 &&
+                 (message[14] & 0b11110000) == 0x00 {
+                _messageType = .lnwiData
+              }
 
+            default:
+              break
+            }
+            
           default:
             break
-          }
-
-        case .opcSlRdDdataP2:
-          if message[1] == 0x15 && (message[2] & 0b11111000) == 0 {
-            
-            if message[3] > 0 && message[3] < 0x78 && (message[7] & 0b10110000) == 00 {
-              _messageType = .locoSlotDataP2
-            }
-            else if message[3] >= 0x78 && message[3] <= 0x7c && message[2] == 0x01 {
-              switch message[3] {
-              case 0x78:
-                _messageType = .querySlot1
-              case 0x79:
-                _messageType = .querySlot2
-              case 0x7a:
-                _messageType = .querySlot3
-              case 0x7b:
-                _messageType = .querySlot4
-              case 0x7c:
-                _messageType = .querySlot5
-              default:
-                break
-              }
-            }
-            else if message[3] == 0x7f && message[2] == 0x00 {
-              _messageType = .opSwDataP2
-            }
-            
-          }
-          else if message[1] == 0x10 {
-            
-            if message[2] == 0x00 {
-              
-              // 0xe6 0x10 0x00 0x00 0x20 0x00 0x0b 0x02 0x02 0x7f 0x00 0x00 0x00 0x00 0x00 0x5d
-
-              if message[3] == 0x00 &&
-                 message[10] == 0x00 &&
-                 message[11] == 0x00 &&
-                 message[12] == 0x00 &&
-                 message[13] == 0x00 &&
-                 message[14] == 0x00 {
-                _messageType = .rosterTableInfo
-              }
-             else if message[ 3] == 0x02 &&
-                 (message[4] & 0b11100000) == 0x00 &&
-                 message[ 5] == 0x00 &&
-                 message[ 6] == 0x0f &&
-                 message[10] == 0x00 &&
-                 message[14] == 0x00 {
-                _messageType = .rosterEntry
-              }
-              
-            }
-            else if message[2] == 0x01 {
-              
-              if message[3] == 0x00 &&
-                 message[10] == 0x00 &&
-                 message[11] == 0x00 &&
-                 message[12] == 0x00 &&
-                 message[13] == 0x00 &&
-                 message[14] == 0x00 {
-                _messageType = .routeTableInfoA
-              }
-              else if message[3] == 0x02 &&
-                (message[5] & 0b11111110) == 0x00 &&
-                 message[6] == 0x0f {
-                _messageType = .routeTablePage
-              }
-              
-            }
-            else if message[2] == 0x02 {
-              
-              if message[ 3] == 0x00 &&
-                 message[ 5] == 0x00 &&
-                 message[ 6] == 0x00 &&
-                 message[ 7] == 0x02 &&
-                 (message[12] & 0b11000000) == 0x00 &&
-                 (message[14] & 0b11110000) == 0x00 {
-                _messageType = .s7Info
-              }
-
-            }
-            
-          }
-
-        case .opcSlRdDdata:
-          if message[ 1] == 0x0e &&
-            (message[ 7] &  0b00110000) == 0x00 /* TRK */ {
-            
-            switch message[2] {
-            case 0x78:
-              break
-            case 0x79:
-              break
-            case 0x7a:
-              break
-            case 0x7b:
-              _messageType = .fastClockData
-            case 0x7c:
-              if (message[ 4] & 0b11110000) == 0 {
-                _messageType = .progSlotDataP1
-              }
-            case 0x7d:
-              break
-            case 0x7e:
-              _messageType = .opSwDataBP1
-            case 0x7f:
-              _messageType = .opSwDataAP1
-            default:
-              if message[ 2] > 0 && message[2] < 0x78 &&
-            //    (message[ 6] & 0b11000000) == 0 && /* DIRF */
-                (message[ 7] & 0b10110000) == 0 &&
-                (message[ 8] & 0b11110010) == 0 && /* SS@  */
-                (message[10] & 0b11110000) == 0    /* SND  */ {
-                _messageType = .locoSlotDataP1
-              }
-            }
-            
-          }
-
-        case .opcImmPacket:
-          if message[1] == 0x0b && message[2] == 0x7f {
-            
-            if message[3] == 0x34 &&
-               (message[4] & 0b11011100) == 0b00000100 &&
-               (message[7] & 0b11110000) == 0b00100000 &&
-                message[8] == 0 &&
-                message[9] == 0 {
-              _messageType = .locoF9F12IMMLAdr
-            }
-            else if message[3] == 0x24 &&
-               (message[4] & 0b11011111) == 0x2 &&
-               (message[6] & 0b11110000) == 0b00100000 &&
-                message[7] == 0 &&
-                message[8] == 0 &&
-                message[9] == 0 {
-              _messageType = .locoF9F12IMMSAdr
-            }
-            else if message[3] == 0x44 &&
-               (message[4] & 0b11010100) == 0b00000100 &&
-                message[7] == 0x5e &&
-                message[9] == 0 {
-              _messageType = .locoF13F20IMMLAdr
-            }
-            else if message[3] == 0x34 &&
-               (message[4] & 0b11011011) == 0b00000010 &&
-                message[6] == 0x5e &&
-                message[8] == 0 &&
-                message[9] == 0 {
-              _messageType = .locoF13F20IMMSAdr
-            }
-            else if message[3] == 0x44 &&
-               (message[4] & 0b11010100) == 0b00000100 &&
-                message[7] == 0x5f &&
-                (message[8] & 0b11110000) == 0 &&
-                message[9] == 0 {
-              _messageType = .locoF21F28IMMLAdr
-            }
-            else if message[3] == 0x34 &&
-               (message[4] & 0b11011011) == 0b00000010 &&
-                message[6] == 0x5f &&
-                message[8] == 0 &&
-                message[9] == 0 {
-              _messageType = .locoF21F28IMMSAdr
-            }
-            else if message[3] == 0x54 &&
-              (message[4] & 0b10000111) == 0b00000111 &&
-              (message[5] & 0b11000000) == 0b00000000 &&
-              (message[6] & 0b10001000) == 0b00001000 &&
-              (message[7] & 0b11110100) == 0b01100100 {
-              _messageType = .s7CVRW
-            }
-            else if (message[3] & 0b10001000) == 0 /* &&
-               (message[4] & 0b11100000) == 0b00100000 */ {
-              _messageType = .immPacket
-            }
-
-          }
-
-
-        case .opcWrSlDataP2:
-          if message[1] == 0x15 {
-            if message[2] == 0 && message[3] == 0x7f {
-              _messageType = .setOpSwDataP2
-            }
-            else if message[2] == 0x19 && message[3] == 0x7b {
-              _messageType = .resetQuerySlot4
-            }
-            else if message[3] > 0 && message[3] < 0x78 {
-              _messageType = .setLocoSlotDataP2
-            }
-          }
-          else if message[1] == 0x10 {
-    // 0xee 0x10 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x01
-            
-            if message[2] == 0x00 {
-    
-              if message[ 3] == 0x00 &&
-                 message[ 4] == 0x00 &&
-                 message[ 5] == 0x00 &&
-                 message[ 6] == 0x00 &&
-                 message[ 7] == 0x00 &&
-                 message[ 8] == 0x00 &&
-                 message[ 9] == 0x00 &&
-                 message[10] == 0x00 &&
-                 message[11] == 0x00 &&
-                 message[12] == 0x00 &&
-                 message[13] == 0x00 {
-                _messageType = .getRosterTableInfo
-              }
-              else if message[ 3] == 0x02 &&
-                 (message[4] & 0b11100000) == 0x00 &&
-                 message[ 5] == 0x00 &&
-                 message[10] == 0x00 &&
-                 message[14] == 0x00 {
-                _messageType = .getRosterEntry
-              }
-              else if message[ 3] == 0x43 &&
-                      message[ 5] == 0x00 &&
-                      message[10] == 0x00 &&
-                      message[14] == 0x00 {
-                     _messageType = .setRosterEntry
-              }
-
-            }
-            else if message[2] == 0x01 {
-              
-              if message[ 3] == 0x00 &&
-                 message[ 4] == 0x00 &&
-                 message[ 5] == 0x00 &&
-                 message[ 6] == 0x00 &&
-                 message[ 7] == 0x00 &&
-                 message[ 8] == 0x00 &&
-                 message[ 9] == 0x00 &&
-                 message[10] == 0x00 &&
-                 message[11] == 0x00 &&
-                 message[12] == 0x00 &&
-                 message[13] == 0x00 {
-                _messageType = .getRouteTableInfoA
-              }
-              else if message[ 3] == 0x02 &&
-                        (message[5] & 0b11111110) == 0x00 { // &&
-             //    message[ 6] == 0x00 &&
-             //    message[ 7] == 0x00 &&
-             //    message[ 8] == 0x00 &&
-             //    message[ 9] == 0x00 &&
-             //    message[10] == 0x00 &&
-             //    message[11] == 0x00 &&
-             //    message[12] == 0x00 &&
-             //    message[13] == 0x00 {
-                _messageType = .getRouteTablePage
-              }
-              else if message[ 3] == 0x03 &&
-                 (message[5] & 0b11111110) == 0x00 {
-                _messageType = .setRouteTablePage
-              }
-
-            }
-            else if message[2] == 0x02 {
-              
-              if message[ 3] == 0x00 &&
-                 message[ 4] == 0x00 &&
-                 message[ 5] == 0x00 &&
-                 message[ 6] == 0x00 &&
-                 message[ 7] == 0x00 &&
-                 message[ 8] == 0x00 &&
-                 message[ 9] == 0x00 &&
-                 message[10] == 0x00 &&
-                 message[11] == 0x00 &&
-                 message[12] == 0x00 &&
-                 message[13] == 0x00 &&
-                 message[14] == 0x00 {
-                _messageType = .getRouteTableInfoB
-              }
-              else if message[3] == 0x0f &&
-                 message[ 4] == 0x00 &&
-                 message[ 5] == 0x00 &&
-                 message[ 6] == 0x00 &&
-                 message[ 7] == 0x00 &&
-                 message[ 8] == 0x00 &&
-                 (message[12] & 0b11000000) == 0x00 &&
-                 (message[14] & 0b11110000) == 0x00 {
-                _messageType = .setS7BaseAddr
-              }
-
-            }
-            
-          }
-
-        case .opcWrSlData:
-          if message[1] == 0x0e {
-            
-            if message[2] > 0 && message[ 2] <  0x78 && /* SLOT */
-       //       (message[ 6] &  0b11000000) == 0x00 && /* DIRF */
-              (message[ 7] &  0b10110000) == 0x00 && /* TRK  */
-              (message[ 8] &  0b11110010) == 0x00 && /* SS@  */
-              (message[10] &  0b11110000) == 0x00    /* SND  */ {
-              _messageType = .setLocoSlotDataP1
-            }
-            else if message[ 2] == 0x7b {
-              _messageType = .setFastClockData
-            }
-            else if message[ 2] == 0x7c &&                /* PROG SLOT */
-                    message[ 4] == 0x00 &&
-                    message[ 7] == 0x00 &&
-                   (message[ 8] &  0b11001100) == 0x00 {
-              _messageType = .progCV
-            }
-            else if message[2] == 0x7e {
-              _messageType = .setOpSwDataBP1
-            }
-            else if message[2] == 0x7f {
-              _messageType = .setOpSwDataAP1
-            }
-            
           }
 
         default:
           break
         }
-        
+
+      case .opcSlRdDdataP2:
+        if message[1] == 0x15 && (message[2] & 0b11111000) == 0 {
+          
+          if message[3] > 0 && message[3] < 0x78 && (message[7] & 0b10110000) == 00 {
+            _messageType = .locoSlotDataP2
+          }
+          else if message[3] >= 0x78 && message[3] <= 0x7c && message[2] == 0x01 {
+            switch message[3] {
+            case 0x78:
+              _messageType = .querySlot1
+            case 0x79:
+              _messageType = .querySlot2
+            case 0x7a:
+              _messageType = .querySlot3
+            case 0x7b:
+              _messageType = .querySlot4
+            case 0x7c:
+              _messageType = .querySlot5
+            default:
+              break
+            }
+          }
+          else if message[3] == 0x7f && message[2] == 0x00 {
+            _messageType = .opSwDataP2
+          }
+          
+        }
+        else if message[1] == 0x10 {
+          
+          if message[2] == 0x00 {
+            
+            // 0xe6 0x10 0x00 0x00 0x20 0x00 0x0b 0x02 0x02 0x7f 0x00 0x00 0x00 0x00 0x00 0x5d
+
+            if message[3] == 0x00 &&
+               message[10] == 0x00 &&
+               message[11] == 0x00 &&
+               message[12] == 0x00 &&
+               message[13] == 0x00 &&
+               message[14] == 0x00 {
+              _messageType = .rosterTableInfo
+            }
+           else if message[ 3] == 0x02 &&
+               (message[4] & 0b11100000) == 0x00 &&
+               message[ 5] == 0x00 &&
+               message[ 6] == 0x0f &&
+               message[10] == 0x00 &&
+               message[14] == 0x00 {
+              _messageType = .rosterEntry
+            }
+            
+          }
+          else if message[2] == 0x01 {
+            
+            if message[3] == 0x00 &&
+               message[10] == 0x00 &&
+               message[11] == 0x00 &&
+               message[12] == 0x00 &&
+               message[13] == 0x00 &&
+               message[14] == 0x00 {
+              _messageType = .routeTableInfoA
+            }
+            else if message[3] == 0x02 &&
+              (message[5] & 0b11111110) == 0x00 &&
+               message[6] == 0x0f {
+              _messageType = .routeTablePage
+            }
+            
+          }
+          else if message[2] == 0x02 {
+            
+            if message[ 3] == 0x00 &&
+               message[ 5] == 0x00 &&
+               message[ 6] == 0x00 &&
+               message[ 7] == 0x02 &&
+               (message[12] & 0b11000000) == 0x00 &&
+               (message[14] & 0b11110000) == 0x00 {
+              _messageType = .s7Info
+            }
+
+          }
+          
+        }
+
+      case .opcSlRdDdata:
+        if message[ 1] == 0x0e &&
+          (message[ 7] &  0b00110000) == 0x00 /* TRK */ {
+          
+          switch message[2] {
+          case 0x78:
+            break
+          case 0x79:
+            break
+          case 0x7a:
+            break
+          case 0x7b:
+            _messageType = .fastClockData
+          case 0x7c:
+            if (message[ 4] & 0b11110000) == 0 {
+              _messageType = .progSlotDataP1
+            }
+          case 0x7d:
+            break
+          case 0x7e:
+            _messageType = .opSwDataBP1
+          case 0x7f:
+            _messageType = .opSwDataAP1
+          default:
+            if message[ 2] > 0 && message[2] < 0x78 &&
+          //    (message[ 6] & 0b11000000) == 0 && /* DIRF */
+              (message[ 7] & 0b10110000) == 0 &&
+              (message[ 8] & 0b11110010) == 0 && /* SS@  */
+              (message[10] & 0b11110000) == 0    /* SND  */ {
+              _messageType = .locoSlotDataP1
+            }
+          }
+          
+        }
+
+      case .opcImmPacket:
+        if message[1] == 0x0b && message[2] == 0x7f {
+          
+          if message[3] == 0x34 &&
+             (message[4] & 0b11011100) == 0b00000100 &&
+             (message[7] & 0b11110000) == 0b00100000 &&
+              message[8] == 0 &&
+              message[9] == 0 {
+            _messageType = .locoF9F12IMMLAdr
+          }
+          else if message[3] == 0x24 &&
+             (message[4] & 0b11011111) == 0x2 &&
+             (message[6] & 0b11110000) == 0b00100000 &&
+              message[7] == 0 &&
+              message[8] == 0 &&
+              message[9] == 0 {
+            _messageType = .locoF9F12IMMSAdr
+          }
+          else if message[3] == 0x44 &&
+             (message[4] & 0b11010100) == 0b00000100 &&
+              message[7] == 0x5e &&
+              message[9] == 0 {
+            _messageType = .locoF13F20IMMLAdr
+          }
+          else if message[3] == 0x34 &&
+             (message[4] & 0b11011011) == 0b00000010 &&
+              message[6] == 0x5e &&
+              message[8] == 0 &&
+              message[9] == 0 {
+            _messageType = .locoF13F20IMMSAdr
+          }
+          else if message[3] == 0x44 &&
+             (message[4] & 0b11010100) == 0b00000100 &&
+              message[7] == 0x5f &&
+              (message[8] & 0b11110000) == 0 &&
+              message[9] == 0 {
+            _messageType = .locoF21F28IMMLAdr
+          }
+          else if message[3] == 0x34 &&
+             (message[4] & 0b11011011) == 0b00000010 &&
+              message[6] == 0x5f &&
+              message[8] == 0 &&
+              message[9] == 0 {
+            _messageType = .locoF21F28IMMSAdr
+          }
+          else if message[3] == 0x54 &&
+            (message[4] & 0b10000111) == 0b00000111 &&
+            (message[5] & 0b11000000) == 0b00000000 &&
+            (message[6] & 0b10001000) == 0b00001000 &&
+            (message[7] & 0b11110100) == 0b01100100 {
+            _messageType = .s7CVRW
+          }
+          else if (message[3] & 0b10000000) == 0 {
+            _messageType = .immPacket
+          }
+
+        }
+
+
+      case .opcWrSlDataP2:
+        if message[1] == 0x15 {
+          if message[2] == 0 && message[3] == 0x7f {
+            _messageType = .setOpSwDataP2
+          }
+          else if message[2] == 0x19 && message[3] == 0x7b {
+            _messageType = .resetQuerySlot4
+          }
+          else if message[3] > 0 && message[3] < 0x78 {
+            _messageType = .setLocoSlotDataP2
+          }
+        }
+        else if message[1] == 0x10 {
+  // 0xee 0x10 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x01
+          
+          if message[2] == 0x00 {
+  
+            if message[ 3] == 0x00 &&
+               message[ 4] == 0x00 &&
+               message[ 5] == 0x00 &&
+               message[ 6] == 0x00 &&
+               message[ 7] == 0x00 &&
+               message[ 8] == 0x00 &&
+               message[ 9] == 0x00 &&
+               message[10] == 0x00 &&
+               message[11] == 0x00 &&
+               message[12] == 0x00 &&
+               message[13] == 0x00 {
+              _messageType = .getRosterTableInfo
+            }
+            else if message[ 3] == 0x02 &&
+               (message[4] & 0b11100000) == 0x00 &&
+               message[ 5] == 0x00 &&
+               message[10] == 0x00 &&
+               message[14] == 0x00 {
+              _messageType = .getRosterEntry
+            }
+            else if message[ 3] == 0x43 &&
+                    message[ 5] == 0x00 &&
+                    message[10] == 0x00 &&
+                    message[14] == 0x00 {
+                   _messageType = .setRosterEntry
+            }
+
+          }
+          else if message[2] == 0x01 {
+            
+            if message[ 3] == 0x00 &&
+               message[ 4] == 0x00 &&
+               message[ 5] == 0x00 &&
+               message[ 6] == 0x00 &&
+               message[ 7] == 0x00 &&
+               message[ 8] == 0x00 &&
+               message[ 9] == 0x00 &&
+               message[10] == 0x00 &&
+               message[11] == 0x00 &&
+               message[12] == 0x00 &&
+               message[13] == 0x00 {
+              _messageType = .getRouteTableInfoA
+            }
+            else if message[ 3] == 0x02 &&
+                      (message[5] & 0b11111110) == 0x00 { // &&
+           //    message[ 6] == 0x00 &&
+           //    message[ 7] == 0x00 &&
+           //    message[ 8] == 0x00 &&
+           //    message[ 9] == 0x00 &&
+           //    message[10] == 0x00 &&
+           //    message[11] == 0x00 &&
+           //    message[12] == 0x00 &&
+           //    message[13] == 0x00 {
+              _messageType = .getRouteTablePage
+            }
+            else if message[ 3] == 0x03 &&
+               (message[5] & 0b11111110) == 0x00 {
+              _messageType = .setRouteTablePage
+            }
+
+          }
+          else if message[2] == 0x02 {
+            
+            if message[ 3] == 0x00 &&
+               message[ 4] == 0x00 &&
+               message[ 5] == 0x00 &&
+               message[ 6] == 0x00 &&
+               message[ 7] == 0x00 &&
+               message[ 8] == 0x00 &&
+               message[ 9] == 0x00 &&
+               message[10] == 0x00 &&
+               message[11] == 0x00 &&
+               message[12] == 0x00 &&
+               message[13] == 0x00 &&
+               message[14] == 0x00 {
+              _messageType = .getRouteTableInfoB
+            }
+            else if message[3] == 0x0f &&
+               message[ 4] == 0x00 &&
+               message[ 5] == 0x00 &&
+               message[ 6] == 0x00 &&
+               message[ 7] == 0x00 &&
+               message[ 8] == 0x00 &&
+               (message[12] & 0b11000000) == 0x00 &&
+               (message[14] & 0b11110000) == 0x00 {
+              _messageType = .setS7BaseAddr
+            }
+
+          }
+          
+        }
+
+      case .opcWrSlData:
+        if message[1] == 0x0e {
+          
+          if message[2] > 0 && message[ 2] <  0x78 && /* SLOT */
+     //       (message[ 6] &  0b11000000) == 0x00 && /* DIRF */
+            (message[ 7] &  0b10110000) == 0x00 && /* TRK  */
+            (message[ 8] &  0b11110010) == 0x00 && /* SS@  */
+            (message[10] &  0b11110000) == 0x00    /* SND  */ {
+            _messageType = .setLocoSlotDataP1
+          }
+          else if message[ 2] == 0x7b {
+            _messageType = .setFastClockData
+          }
+          else if message[ 2] == 0x7c &&                /* PROG SLOT */
+                  message[ 4] == 0x00 &&
+                  message[ 7] == 0x00 &&
+                 (message[ 8] &  0b11001100) == 0x00 {
+            _messageType = .progCV
+          }
+          else if message[2] == 0x7e {
+            _messageType = .setOpSwDataBP1
+          }
+          else if message[2] == 0x7f {
+            _messageType = .setOpSwDataAP1
+          }
+          
+        }
+
+      default:
+        break
       }
-      
-      return _messageType!
       
     }
     
-//    set(value) {
-//      _messageType = value
-//    }
-    
+    return _messageType!
+
   }
 
+  // MARK: Public Class Properties
   
+  public static let locoNetAddressRange = UInt16(1) ... UInt16(10239)
+  
+  public static let slotBankRange = UInt8(0) ... UInt8(3)
+
+  public static let slotRange = UInt8(1) ... UInt8(119)
+
   // MARK: Public Class Methods
   
   public static func checkSum(data: [UInt8]) -> UInt8 {

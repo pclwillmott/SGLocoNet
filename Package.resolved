@@ -1,0 +1,15 @@
+{
+  "originHash" : "e1b3b53e4728701444c0b07b5d1640cb8dc5539acae336002fd337ccfe110bc6",
+  "pins" : [
+    {
+      "identity" : "sgdcc",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pclwillmott/SGDCC",
+      "state" : {
+        "revision" : "797fc202a204d62dd14271e1751fa6aab0c181c7",
+        "version" : "0.0.5"
+      }
+    }
+  ],
+  "version" : 3
+}

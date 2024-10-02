@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// SGLocoNetMessageOpCode.swift
+// SGLocoNetOpcode.swift
 //
 // This Swift source file is a part of the SGLocoNet package
 // by Paul C. L. Willmott.
@@ -27,12 +27,13 @@
 //
 // Revision History:
 //
-//     20/09/2024  Paul Willmott - SGLocoNetMessageOpCode.swift created
+//     20/09/2024  Paul Willmott - SGLocoNetOpcode.swift created
+//     02/10/2024  Paul Willmott - renamed to SGLocoNetOpcode
 // -----------------------------------------------------------------------------
 
 import Foundation
 
-public enum SGLocoNetMessageOpcode : UInt8, CaseIterable, Sendable {
+public enum SGLocoNetOpcode : UInt8, CaseIterable, Sendable {
 
 // MARK: Enumeration
   

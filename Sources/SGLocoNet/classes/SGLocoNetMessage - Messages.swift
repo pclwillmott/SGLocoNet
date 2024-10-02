@@ -1,0 +1,216 @@
+// -----------------------------------------------------------------------------
+// SGLocoNetMessage - Messages.swift
+//
+// This Swift source file is a part of the SGLocoNet package
+// by Paul C. L. Willmott.
+//
+// Copyright © 2024 Paul C. L. Willmott. All rights reserved.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy 
+// of this software and associated documentation files (the “Software”), to deal 
+// in the Software without restriction, including without limitation the rights 
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
+// copies of the Software, and to permit persons to whom the Software is 
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in 
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
+// SOFTWARE.
+// -----------------------------------------------------------------------------
+//
+// Revision History:
+//
+//     02/10/2024  Paul Willmott - SGLocoNetMessage - Messages.swift created
+// -----------------------------------------------------------------------------
+
+import Foundation
+import SGDCC
+
+public extension SGLocoNetMessage {
+  
+  // MARK: COMMAND STATION COMMANDS
+  
+  static func powerOn() -> SGLocoNetMessage {
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcGPOn.rawValue], appendCheckSum: true)
+  }
+  
+  static func powerOff() -> SGLocoNetMessage {
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcGPOff.rawValue], appendCheckSum: true)
+  }
+  
+  static func getOpSwDataAP1() -> SGLocoNetMessage {
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7f, 0x00], appendCheckSum: true)
+  }
+  
+  static func getOpSwDataBP1() -> SGLocoNetMessage {
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7e, 0x00], appendCheckSum: true)
+  }
+  
+  // MARK: HELPER COMMANDS
+  
+  static func immPacket(packet:[UInt8], repeatCount: SGLocoNetIMMPacketRepeat) -> SGLocoNetMessage? {
+    
+    guard (1 ... 5) ~= packet.count else {
+      return nil
+    }
+    
+    var data : [UInt8] = [
+      SGLocoNetOpcode.opcImmPacket.rawValue,
+      0x0b,
+      0x7f,
+      (UInt8(packet.count) << 4) | repeatCount.rawValue,
+      0b00000000,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    ]
+    
+    var mask : UInt8 = 1
+    
+    for index in 0 ..< packet.count {
+      let byte = packet[index]
+      data[4] |= (byte & 0x80) != 0 ? mask : 0
+      data[5 + index] = byte & 0x7f
+      mask <<= 1
+    }
+    
+    return SGLocoNetMessage(data: data, appendCheckSum: true)
+
+  }
+  
+  static func immPacket(dccPacket:SGDCCPacket, repeatCount: SGLocoNetIMMPacketRepeat) -> SGLocoNetMessage? {
+    
+    guard dccPacket.isChecksumOK else {
+      return nil
+    }
+    
+    // The DCC packet checksum is not included in the immPacket as it
+    // is added by the Command Station.
+    
+    var data : [UInt8] = [
+      SGLocoNetOpcode.opcImmPacket.rawValue,
+      0x0b,
+      0x7f,
+      (UInt8(dccPacket.packet.count - 1) << 4) | repeatCount.rawValue,
+      0b00000000,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    ]
+    
+    var mask : UInt8 = 1
+
+    for index in 0 ..< dccPacket.packet.count - 1 {
+      let byte = dccPacket.packet[index]
+      data[4] |= (byte & 0x80) != 0 ? mask : 0
+      data[5 + index] = byte & 0x7f
+      mask <<= 1
+    }
+    
+    return SGLocoNetMessage(data: data, appendCheckSum: true)
+
+  }
+  
+  // MARK: LOCOMOTIVE CONTROL COMMANDS
+  
+  static func getLocoSlotDataP1(address: UInt16) -> SGLocoNetMessage? {
+    guard SGLocoNetMessage.locoNetAddressRange ~= address else {
+      return nil
+    }
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoAdr.rawValue, UInt8(address >> 7), UInt8(address & 0x7f)], appendCheckSum: true)
+  }
+  
+  static func getLocoSlotDataP2(address: UInt16) -> SGLocoNetMessage?{
+    guard SGLocoNetMessage.locoNetAddressRange ~= address else {
+      return nil
+    }
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoAdrP2.rawValue, UInt8(address >> 7), UInt8(address & 0x7f)], appendCheckSum: true)
+  }
+
+  static func setLocoSlotStat1P1(slotNumber:UInt8, stat1:UInt8) -> SGLocoNetMessage? {
+    guard SGLocoNetMessage.slotRange ~= slotNumber && stat1 < 0x80 else {
+      return nil
+    }
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcSlotStat1.rawValue, slotNumber, stat1], appendCheckSum: true)
+  }
+  
+  static func setLocoSlotStat1P2(slotBank:UInt8, slotNumber:UInt8, stat1:UInt8) -> SGLocoNetMessage? {
+    guard SGLocoNetMessage.slotBankRange ~= slotBank && SGLocoNetMessage.slotRange ~= slotNumber && stat1 < 0x80 else {
+      return nil
+    }
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | slotBank, slotNumber, 0x60, stat1], appendCheckSum: true)
+  }
+
+  static func moveSlotP1(sourceSlotNumber: UInt8, destinationSlotNumber: UInt8) -> SGLocoNetMessage? {
+    guard SGLocoNetMessage.slotRange ~= sourceSlotNumber && SGLocoNetMessage.slotRange ~= destinationSlotNumber && sourceSlotNumber != destinationSlotNumber else {
+      return nil
+    }
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcMoveSlots.rawValue, sourceSlotNumber, destinationSlotNumber], appendCheckSum: true)
+  }
+  
+  static func moveSlotP2(sourceSlotBank: UInt8, sourceSlotNumber: UInt8, destinationSlotBank: UInt8, destinationSlotNumber: UInt8) -> SGLocoNetMessage? {
+    guard SGLocoNetMessage.slotBankRange ~= sourceSlotBank && SGLocoNetMessage.slotRange ~= sourceSlotNumber && SGLocoNetMessage.slotBankRange ~= destinationSlotBank && SGLocoNetMessage.slotRange ~= destinationSlotNumber && (sourceSlotNumber != destinationSlotNumber || sourceSlotBank != destinationSlotBank) else {
+      return nil
+    }
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | sourceSlotBank, sourceSlotNumber, destinationSlotBank, destinationSlotNumber], appendCheckSum: true)
+  }
+
+  static func setLocoSlotInUseP1(slotNumber: UInt8) -> SGLocoNetMessage? {
+    guard SGLocoNetMessage.slotRange ~= slotNumber else {
+      return nil
+    }
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcMoveSlots.rawValue, slotNumber, slotNumber], appendCheckSum: true)
+  }
+  
+  static func setLocoSlotInUseP2(slotBank: UInt8, slotNumber: UInt8) -> SGLocoNetMessage? {
+    guard SGLocoNetMessage.slotBankRange ~= slotBank && SGLocoNetMessage.slotRange ~= slotNumber else {
+      return nil
+    }
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | slotBank, slotNumber, slotBank, slotNumber], appendCheckSum: true)
+  }
+
+  static func locoSpdP1(slotNumber: UInt8, speed: UInt8) -> SGLocoNetMessage? {
+    guard SGLocoNetMessage.slotRange ~= slotNumber && (0 ... 127) ~= speed else {
+      return nil
+    }
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoSpd.rawValue, slotNumber, speed], appendCheckSum: true)
+  }
+  
+  static func locoSpdDirP2(slotBank: UInt8, slotNumber: UInt8, speed: UInt8, direction: SGLocoNetLocomotiveDirection, throttleID: UInt16) -> SGLocoNetMessage? {
+    guard SGLocoNetMessage.slotBankRange ~= slotBank && SGLocoNetMessage.slotRange ~= slotNumber && (0 ... 127) ~= speed else {
+      return nil
+    }
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | (direction == .reverse ? 0b00001000 : 0), slotNumber, UInt8(throttleID & 0x7f), speed], appendCheckSum: true)
+  }
+
+  static func locoDirF0F4P1(slotNumber: UInt8, direction:SGLocoNetLocomotiveDirection, functions: [Bool]) -> SGLocoNetMessage? {
+    
+    guard SGLocoNetMessage.slotRange ~= slotNumber && functions.count >= 5 else {
+      return nil
+    }
+    
+    var dirf : UInt8 = (direction == .reverse ? 0b00100000 : 0) | (functions[0] ? 0b00010000 : 0)
+    
+    var mask : UInt8 = 1
+    for index in 1 ... 4 {
+      dirf |= functions[index] ? mask : 0
+      mask <<= 1
+    }
+    
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoDirF.rawValue, slotNumber, dirf], appendCheckSum: true)
+
+  }
+
+}
+

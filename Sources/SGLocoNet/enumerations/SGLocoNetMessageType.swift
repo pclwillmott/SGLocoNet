@@ -66,10 +66,8 @@ public enum SGLocoNetMessageType: CaseIterable, Sendable {
   case getDuplexSignalStrength
   case getFastClockData
   case getLocoSlotData
-  case getLocoSlotDataLAdrP1
-  case getLocoSlotDataLAdrP2
-  case getLocoSlotDataSAdrP1
-  case getLocoSlotDataSAdrP2
+  case getLocoSlotDataAdrP1
+  case getLocoSlotDataAdrP2
   case getQuerySlot
   case getRosterEntry
   case getRosterTableInfo
@@ -231,10 +229,8 @@ public enum SGLocoNetMessageType: CaseIterable, Sendable {
     .getDuplexSignalStrength : String(localized: "Get Duplex Signal Strength"),
     .getFastClockData        : String(localized: "Get Fast Clock Data"),
     .getLocoSlotData         : String(localized: "Get Locomotive Slot Data"),
-    .getLocoSlotDataLAdrP1   : String(localized: "Get Locomotive Slot Data by Long Address (P1)"),
-    .getLocoSlotDataLAdrP2   : String(localized: "Get Locomotive Slot Data by Long Address (P2)"),
-    .getLocoSlotDataSAdrP1   : String(localized: "Get Locomotive Slot Data by Short Address (P1)"),
-    .getLocoSlotDataSAdrP2   : String(localized: "Get Locomotive Slot Data by Short Address (P2)"),
+    .getLocoSlotDataAdrP1    : String(localized: "Get Locomotive Slot Data by Address (P1)"),
+    .getLocoSlotDataAdrP2    : String(localized: "Get Locomotive Slot Data by Address (P2)"),
     .getQuerySlot            : String(localized: "Get Query Slot"),
     .getRosterEntry          : String(localized: "Get Roster Entry"),
     .getRosterTableInfo      : String(localized: "Get Roster Table Information"),

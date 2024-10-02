@@ -34,106 +34,10 @@ import Foundation
 
 extension SGLocoNetInterface {
   
-  // MARK: COMMAND STATION COMMANDS
-
   public func sendMessage(message:SGLocoNetMessage) {
     addToQueue(message: message)
   }
   
-  public func powerOn() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcGPOn.rawValue], appendCheckSum: true))
-  }
-  
-  public func powerOff() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcGPOff.rawValue], appendCheckSum: true))
-  }
-  
-  public func getOpSwDataAP1() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcRqSlData.rawValue, 0x7f, 0x00], appendCheckSum: true))
-  }
-
-  // MARK: HELPER COMMANDS
-  
-  public func immPacket(packet:[UInt8], repeatCount: SGLocoNetIMMPacketRepeat) {
-    
-    guard packet.count < 6 else {
-      return
-    }
-    
-    let param : UInt8 = ((UInt8(packet.count) << 4) | repeatCount.rawValue) & 0x7f
-    
-    var payload : [UInt8] = [
-      SGLocoNetMessageOpcode.opcImmPacket.rawValue,
-      0x0b,
-      0x7f,
-      param,
-      0b00000000,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00
-    ]
-    
-    var mask : UInt8 = 1
-    
-    for index in 0...packet.count - 1 {
-      
-      payload[4] |= (packet[index] & 0x80 == 0x80) ? mask : 0x00
-      
-      payload[5 + index] = packet[index] & 0x7f
-      
-      mask <<= 1
-      
-    }
-    
-    addToQueue(message: SGLocoNetMessage(data: payload, appendCheckSum: true))
-
-  }
-  
-  // MARK: LOCOMOTIVE CONTROL COMMANDS
-  
-  public func getLocoSlotDataP1(forAddress: UInt16) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcLocoAdr.rawValue, UInt8(forAddress >> 7), UInt8(forAddress & 0x7f)], appendCheckSum: true))
-  }
-  
-  public func getLocoSlotDataP2(forAddress: UInt16) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcLocoAdrP2.rawValue, UInt8(forAddress >> 7), UInt8(forAddress & 0x7f)], appendCheckSum: true))
-  }
-  /*
-  public func getLocoSlotData(forAddress: UInt16) {
-    if commandStationType.implementsProtocol2 {
-      getLocoSlotDataP2(forAddress: forAddress)
-    }
-    else {
-      getLocoSlotDataP1(forAddress: forAddress)
-    }
-  }
-  */
-  public func setLocoSlotStat1P1(slotNumber:UInt8, stat1:UInt8) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcSlotStat1.rawValue, UInt8(slotNumber), stat1], appendCheckSum: true))
-  }
-  
-  public func setLocoSlotStat1P2(slotPage:UInt8, slotNumber:UInt8, stat1:UInt8) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcD4Group.rawValue, 0b00111000 | (slotPage & 0b00000111), UInt8(slotNumber & 0x7f), 0x60, stat1], appendCheckSum: true))
-  }
-  /*
-  public func setLocoSlotStat1(slotPage:UInt8, slotNumber:UInt8, stat1:UInt8) {
-    if commandStationType.implementsProtocol2 {
-      setLocoSlotStat1P2(slotPage: slotPage, slotNumber: slotNumber, stat1: stat1)
-    }
-    else {
-      setLocoSlotStat1P1(slotNumber: slotNumber, stat1: stat1)
-    }
-  }
-  */
-  public func moveSlotsP1(sourceSlotNumber: UInt8, destinationSlotNumber: UInt8) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcMoveSlots.rawValue, UInt8(sourceSlotNumber), UInt8(destinationSlotNumber)], appendCheckSum: true))
-  }
-  
-  public func moveSlotsP2(sourceSlotNumber: UInt8, sourceSlotPage: UInt8, destinationSlotNumber: UInt8, destinationSlotPage: UInt8) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcD4Group.rawValue, (sourceSlotPage & 0b00000111) | 0b00111000, UInt8(sourceSlotNumber), destinationSlotPage & 0b00000111, UInt8(destinationSlotNumber)], appendCheckSum: true))
-  }
   /*
   public func setLocomotiveState(address:UInt16, slotNumber: UInt8, slotPage: UInt8, nextState:LocoNetLocomotiveState, throttleID: UInt16) -> LocomotiveStateWithTimeStamp {
     
@@ -341,31 +245,6 @@ extension SGLocoNetInterface {
   }
   */
 
-  public func locoSpdDirP2(slotNumber: UInt8, slotPage: UInt8, speed: UInt8, direction: SGLocoNetLocomotiveDirection, throttleID: UInt16) {
-    
-    let data : [UInt8] = [
-      SGLocoNetMessageOpcode.opcD5Group.rawValue,
-      (slotPage & 0x07) | (direction == .reverse ? 0b00001000 : 0b00000000),
-      slotNumber & 0x7f,
-      UInt8(throttleID & 0x7f),
-      speed & 0x7f
-    ]
-    
-    addToQueue(message: SGLocoNetMessage(data: data, appendCheckSum: true))
-
-  }
-  
-  public func locoSpdP1(slotNumber: UInt8, speed: UInt8) {
-    
-    let data : [UInt8] = [
-      SGLocoNetMessageOpcode.opcLocoSpd.rawValue,
-      slotNumber & 0x7f,
-      speed & 0x7f
-    ]
-    
-    addToQueue(message: SGLocoNetMessage(data: data, appendCheckSum: true))
-
-  }
   
   public func locoF0F6P2(slotNumber: UInt8, slotPage: UInt8, functions: [Bool], throttleID: UInt16) {
     
@@ -384,7 +263,7 @@ extension SGLocoNetInterface {
     fnx |= functions[6] ? 0b01000000 : 0
 
     let data : [UInt8] = [
-      SGLocoNetMessageOpcode.opcD5Group.rawValue,
+      SGLocoNetOpcode.opcD5Group.rawValue,
       (slotPage & 0x07) | 0b00010000,
       slotNumber & 0x7f,
       UInt8(throttleID & 0x7f),
@@ -413,7 +292,7 @@ extension SGLocoNetInterface {
     }
     
     let data : [UInt8] = [
-      SGLocoNetMessageOpcode.opcD5Group.rawValue,
+      SGLocoNetOpcode.opcD5Group.rawValue,
       (slotPage & 0x07) | 0b00011000,
       slotNumber & 0x7f,
       UInt8(throttleID & 0x7f),
@@ -442,7 +321,7 @@ extension SGLocoNetInterface {
     }
 
     let data : [UInt8] = [
-      SGLocoNetMessageOpcode.opcD5Group.rawValue,
+      SGLocoNetOpcode.opcD5Group.rawValue,
       (slotPage & 0x07) | 0b00100000,
       slotNumber & 0x7f,
       UInt8(throttleID & 0x7f),
@@ -471,7 +350,7 @@ extension SGLocoNetInterface {
     }
 
     let data : [UInt8] = [
-      SGLocoNetMessageOpcode.opcD5Group.rawValue,
+      SGLocoNetOpcode.opcD5Group.rawValue,
       (slotPage & 0x07) | UInt8(functions[28] ? 0b00110000 : 0b00101000),
       slotNumber & 0x7f,
       UInt8(throttleID & 0x7f),
@@ -481,29 +360,6 @@ extension SGLocoNetInterface {
 
   }
   
-  public func locoDirF0F4P1(slotNumber: UInt8, direction:SGLocoNetLocomotiveDirection, functions: [Bool]) {
-    
-    guard functions.count >= 5 else {
-      return
-    }
-    
-    var dirf : UInt8 = direction == .reverse ? 0b00100000 : 0
-    
-    dirf |= functions[0] ? 0b00010000 : 0
-    dirf |= functions[1] ? 0b00000001 : 0
-    dirf |= functions[2] ? 0b00000010 : 0
-    dirf |= functions[3] ? 0b00000100 : 0
-    dirf |= functions[4] ? 0b00001000 : 0
-    
-    let data : [UInt8] = [
-      SGLocoNetMessageOpcode.opcLocoDirF.rawValue,
-      slotNumber & 0x7f,
-      dirf
-    ]
-    
-    addToQueue(message: SGLocoNetMessage(data: data, appendCheckSum: true))
-
-  }
   
   public func locoF5F8P1(slotNumber: UInt8, functions: [Bool]) {
     
@@ -523,7 +379,7 @@ extension SGLocoNetInterface {
     }
 
     let data : [UInt8] = [
-      SGLocoNetMessageOpcode.opcLocoSnd.rawValue,
+      SGLocoNetOpcode.opcLocoSnd.rawValue,
       slotNumber & 0x7f,
       fnx
     ]
@@ -837,7 +693,7 @@ extension SGLocoNetInterface {
     
     let mode : UInt8 = 0b01100100 | (isRead ? 0 : 0b1000)
     
-    let message = SGLocoNetMessage(data: [SGLocoNetMessageOpcode.OPC_IMM_PACKET.rawValue, 0x0b, 0x7f, 0x54, high, addA, addB, mode, cv & 0x7f, val & 0x7f], appendCheckSum: true)
+    let message = SGLocoNetMessage(data: [SGLocoNetOpcode.OPC_IMM_PACKET.rawValue, 0x0b, 0x7f, 0x54, high, addA, addB, mode, cv & 0x7f, val & 0x7f], appendCheckSum: true)
     
     addToQueue(message: message)
 
@@ -897,7 +753,7 @@ extension SGLocoNetInterface {
 
     let message = SGLocoNetMessage(data:
         [
-          SGLocoNetMessageOpcode.opcWrSlData.rawValue,
+          SGLocoNetOpcode.opcWrSlData.rawValue,
           0x0e,
           0x7c,
           pcmd,
@@ -938,7 +794,7 @@ extension SGLocoNetInterface {
 
     let message = SGLocoNetMessage(data:
         [
-          SGLocoNetMessageOpcode.opcWrSlData.rawValue,
+          SGLocoNetOpcode.opcWrSlData.rawValue,
           0x0e,
           0x7c,
           pcmd,
@@ -962,7 +818,7 @@ extension SGLocoNetInterface {
   
   public func iplDiscover() {
     
-    let message = SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcPeerXfer.rawValue,
+    let message = SGLocoNetMessage(data: [SGLocoNetOpcode.opcPeerXfer.rawValue,
        0x14, 0x0f, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true)
     
     addToQueue(message: message)
@@ -971,7 +827,7 @@ extension SGLocoNetInterface {
 
   public func iplDiscover(productCode:SGDigitraxProductCode) {
     
-    let message = SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcPeerXfer.rawValue,
+    let message = SGLocoNetMessage(data: [SGLocoNetOpcode.opcPeerXfer.rawValue,
                                         0x14,
                                         0x0f,
                                         0x08,
@@ -1002,7 +858,7 @@ extension SGLocoNetInterface {
     
     let hi = UInt8((switchNumber - 1) >> 7)
     
-    let message = SGLocoNetMessage(data: [SGLocoNetMessageOpcode.OPC_SW_STATE.rawValue, lo, hi], appendCheckSum: true)
+    let message = SGLocoNetMessage(data: [SGLocoNetOpcode.OPC_SW_STATE.rawValue, lo, hi], appendCheckSum: true)
     
     addToQueue(message: message)
 
@@ -1018,7 +874,7 @@ extension SGLocoNetInterface {
     
     let hi = UInt8(sn >> 7) | bit
     
-    let message = SGLocoNetMessage(data: [SGLocoNetMessageOpcode.OPC_SW_REQ.rawValue, lo, hi], appendCheckSum: true)
+    let message = SGLocoNetMessage(data: [SGLocoNetOpcode.OPC_SW_REQ.rawValue, lo, hi], appendCheckSum: true)
     
     addToQueue(message: message)
 
@@ -1034,22 +890,22 @@ extension SGLocoNetInterface {
     
     let hi = UInt8(sn >> 7) | bit
     
-    let message = SGLocoNetMessage(data: [SGLocoNetMessageOpcode.OPC_SW_ACK.rawValue, lo, hi], appendCheckSum: true)
+    let message = SGLocoNetMessage(data: [SGLocoNetOpcode.OPC_SW_ACK.rawValue, lo, hi], appendCheckSum: true)
     
     addToQueue(message: message)
 
   }
   */
   public func getLocoSlotDataP1(slotNumber: UInt8) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcRqSlData.rawValue, slotNumber, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, slotNumber, 0x00], appendCheckSum: true))
   }
   
   public func getLocoSlotDataP2(bankNumber: UInt8, slotNumber: UInt8) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcRqSlData.rawValue, slotNumber, bankNumber | 0b01000000], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, slotNumber, bankNumber | 0b01000000], appendCheckSum: true))
   }
 
   public func getSwState(switchNumber: UInt16) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcSwState.rawValue, UInt8((switchNumber - 1) & 0x7f), UInt8((switchNumber - 1) >> 7)], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcSwState.rawValue, UInt8((switchNumber - 1) & 0x7f), UInt8((switchNumber - 1) >> 7)], appendCheckSum: true))
   }
   /*
   public func setSw(switchNumber: UInt16, state:DCCSwitchState) {
@@ -1058,7 +914,7 @@ extension SGLocoNetInterface {
     
     let hi = UInt8((switchNumber - 1) >> 7) | (state == .closed ? 0x30 : 0x10)
     
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcSwReq.rawValue, lo, hi], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcSwReq.rawValue, lo, hi], appendCheckSum: true))
 
   }
   
@@ -1068,7 +924,7 @@ extension SGLocoNetInterface {
     
     let hi = UInt8((switchNumber - 1) >> 7) | (state == .closed ? 0x30 : 0x10)
     
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcSwAck.rawValue, lo, hi], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcSwAck.rawValue, lo, hi], appendCheckSum: true))
 
   }
   */
@@ -1143,21 +999,21 @@ extension SGLocoNetInterface {
   }
 */
   public func getOpSwDataBP1() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcRqSlData.rawValue, 0x7e, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7e, 0x00], appendCheckSum: true))
   }
   
   public func getOpSwDataP2() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcRqSlData.rawValue, 0x7f, 0x40], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7f, 0x40], appendCheckSum: true))
   }
   
   public func getProgSlotDataP1() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcRqSlData.rawValue, 0x7c, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7c, 0x00], appendCheckSum: true))
   }
   
   public func getLocoSlotDataP2(slotPage: UInt8, slotNumber: UInt8) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcRqSlData.rawValue, slotNumber, slotPage | 0b01000000], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, slotNumber, slotPage | 0b01000000], appendCheckSum: true))
   }
-  
+  /*
   public func testIMM(address: Int) {
     
     let add = address - 1
@@ -1174,6 +1030,7 @@ extension SGLocoNetInterface {
     immPacket(packet: payload, repeatCount: .repeat2)
     
   }
+   */
 /*
   public func setSwIMM(address: Int, state:DCCSwitchState, isOutputOn:Bool) {
     
@@ -1205,7 +1062,7 @@ extension SGLocoNetInterface {
     let slotPage = 1
     let slotNumber = 0x78 + querySlot - 1
     
-    let message = SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcRqSlData.rawValue, UInt8(slotNumber), UInt8(slotPage) | 0b01000000], appendCheckSum: true)
+    let message = SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, UInt8(slotNumber), UInt8(slotPage) | 0b01000000], appendCheckSum: true)
     
     addToQueue(message: message)
 
@@ -1213,7 +1070,7 @@ extension SGLocoNetInterface {
   
   public func getRouteTableInfoA() {
     
-    let message = SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcWrSlDataP2.rawValue,
+    let message = SGLocoNetMessage(data: [SGLocoNetOpcode.opcWrSlDataP2.rawValue,
     0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true)
     
     addToQueue(message: message)
@@ -1229,7 +1086,7 @@ extension SGLocoNetInterface {
     let pageL = UInt8(combined & 0x7f)
     let pageH = UInt8(combined >> 7)
     
-    let message = SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcWrSlDataP2.rawValue,
+    let message = SGLocoNetMessage(data: [SGLocoNetOpcode.opcWrSlDataP2.rawValue,
     0x10, 0x01, 0x02, pageL, pageH, 0x0f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f], appendCheckSum: true)
     
     addToQueue(message: message)
@@ -1272,7 +1129,7 @@ extension SGLocoNetInterface {
   }
 */
   public func getRosterEntry(recordNumber: Int) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcWrSlDataP2.rawValue, 0x10, 0x00, 0x02, UInt8(recordNumber & 0x1f), 0x00, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcWrSlDataP2.rawValue, 0x10, 0x00, 0x02, UInt8(recordNumber & 0x1f), 0x00, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
   }
   
   public func setRosterEntry(entryNumber:Int, extendedAddress1:Int, primaryAddress1:Int,extendedAddress2:Int, primaryAddress2:Int) {
@@ -1287,7 +1144,7 @@ extension SGLocoNetInterface {
     
     let flag : UInt8 = (entryNumber & 0x01) == 0x01 ? 0x04 : 0x00
 
-    let message = SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcWrSlDataP2.rawValue,
+    let message = SGLocoNetMessage(data: [SGLocoNetOpcode.opcWrSlDataP2.rawValue,
     0x10, 0x00, 0x43, UInt8(entryNumber >> 1), 0x00, flag, low1, high1, primary1, 0x00, low2, high2, primary2, 0x00], appendCheckSum: true)
     
     addToQueue(message: message)
@@ -1298,7 +1155,7 @@ extension SGLocoNetInterface {
     
     var data = [UInt8](repeating: 0, count: 13)
     
-    data[0] = SGLocoNetMessageOpcode.opcWrSlData.rawValue
+    data[0] = SGLocoNetOpcode.opcWrSlData.rawValue
     data[1] = 14
     data[2] = 0x7f
     
@@ -1316,7 +1173,7 @@ extension SGLocoNetInterface {
     
     var data = [UInt8](repeating: 0, count: 13)
     
-    data[0] = SGLocoNetMessageOpcode.opcWrSlData.rawValue
+    data[0] = SGLocoNetOpcode.opcWrSlData.rawValue
     data[1] = 14
     data[2] = 0x7e
     
@@ -1334,7 +1191,7 @@ extension SGLocoNetInterface {
     
     var data = [UInt8](repeating: 0, count: 13)
     
-    data[0] = SGLocoNetMessageOpcode.opcWrSlData.rawValue
+    data[0] = SGLocoNetOpcode.opcWrSlData.rawValue
     data[1] = 14
     
     for index in 0..<slotData.count {
@@ -1349,7 +1206,7 @@ extension SGLocoNetInterface {
     
     var data = [UInt8](repeating: 0, count: 20)
     
-    data[0] = SGLocoNetMessageOpcode.opcWrSlDataP2.rawValue
+    data[0] = SGLocoNetOpcode.opcWrSlDataP2.rawValue
     data[1] = 21
     
     for index in 0..<slotData.count {
@@ -1361,31 +1218,31 @@ extension SGLocoNetInterface {
   }
   
   public func resetQuerySlot4() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcWrSlDataP2.rawValue, 0x15, 0x19, 0x7b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcWrSlDataP2.rawValue, 0x15, 0x19, 0x7b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
   }
 
   public func clearLocoSlotDataP1(slotNumber:Int) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcWrSlData.rawValue, 0x0e, UInt8(slotNumber), 0b00000011, 0x00, 0x00, 0b00100000, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcWrSlData.rawValue, 0x0e, UInt8(slotNumber), 0b00000011, 0x00, 0x00, 0b00100000, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
   }
   
   public func clearLocoSlotDataP2(slotPage: Int, slotNumber:Int) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcWrSlDataP2.rawValue, 0x15, UInt8(slotPage), UInt8(slotNumber), 0b00000011, 0x00, 0x00, 0x00, 0x00, 0x00, 0b00100000, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcWrSlDataP2.rawValue, 0x15, UInt8(slotPage), UInt8(slotNumber), 0b00000011, 0x00, 0x00, 0x00, 0x00, 0x00, 0b00100000, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
   }
   
   public func getInterfaceData() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcBusy.rawValue], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcBusy.rawValue], appendCheckSum: true))
   }
   
   public func findReceiver() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcDFGroup.rawValue, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcDFGroup.rawValue, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
   }
   
   public func setLocoNetID(locoNetID: Int) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcDFGroup.rawValue, 0x40, 0x1f, UInt8(locoNetID & 0x7), 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcDFGroup.rawValue, 0x40, 0x1f, UInt8(locoNetID & 0x7), 0x00], appendCheckSum: true))
   }
   
   public func getDuplexData() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcPeerXfer.rawValue, 0x14, 0x03, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcPeerXfer.rawValue, 0x14, 0x03, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
   }
   
   public func setDuplexChannelNumber(channelNumber: Int) {
@@ -1394,7 +1251,7 @@ extension SGLocoNetInterface {
     
     let pxct1 : UInt8 = (cn & 0b10000000) == 0b10000000 ? 0b00000001 : 0
     
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcPeerXfer.rawValue, 0x14, 0x02, 0x00, pxct1, cn, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcPeerXfer.rawValue, 0x14, 0x02, 0x00, pxct1, cn, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
     
   }
   
@@ -1404,16 +1261,16 @@ extension SGLocoNetInterface {
     
     let pxct1 : UInt8 = (gid & 0b10000000) == 0b10000000 ? 0b00000001 : 0
     
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcPeerXfer.rawValue, 0x14, 0x04, 0x00, pxct1, gid, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcPeerXfer.rawValue, 0x14, 0x04, 0x00, pxct1, gid, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
     
   }
   
   public func getDuplexGroupID() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcPeerXfer.rawValue, 0x14, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcPeerXfer.rawValue, 0x14, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
   }
   
   public func getDuplexSignalStrength(duplexGroupChannel: Int) {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcPeerXfer.rawValue, 0x14, 0x10, 0x08, 0x00, UInt8(duplexGroupChannel & 0x7f), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcPeerXfer.rawValue, 0x14, 0x10, 0x08, 0x00, UInt8(duplexGroupChannel & 0x7f), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
   }
   
   public func setDuplexSignalStrength(duplexGroupChannel: Int, signalStrength:Int) {
@@ -1422,7 +1279,7 @@ extension SGLocoNetInterface {
     pxct1 |= ((duplexGroupChannel & 0b10000000) == 0b10000000) ? 0b00000001 : 0
     pxct1 |= ((signalStrength     & 0b10000000) == 0b10000000) ? 0b00000010 : 0
 
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcPeerXfer.rawValue, 0x14, 0x10, 0x10, pxct1, UInt8(duplexGroupChannel & 0x7f), UInt8(signalStrength & 0x7f), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcPeerXfer.rawValue, 0x14, 0x10, 0x10, pxct1, UInt8(duplexGroupChannel & 0x7f), UInt8(signalStrength & 0x7f), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
     
   }
   public func setDuplexGroupName(groupName: String) {
@@ -1443,7 +1300,7 @@ extension SGLocoNetInterface {
     pxct2 |= (data[6] & 0b10000000) == 0b10000000 ? 0b00000100 : 0
     pxct2 |= (data[7] & 0b10000000) == 0b10000000 ? 0b00001000 : 0
     
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcPeerXfer.rawValue, 0x14, 0x03, 0x00, pxct1, data[0], data[1], data[2], data[3], pxct2, data[4], data[5], data[6], data[7], 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcPeerXfer.rawValue, 0x14, 0x03, 0x00, pxct1, data[0], data[1], data[2], data[3], pxct2, data[4], data[5], data[6], data[7], 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
     
   }
   
@@ -1458,7 +1315,7 @@ extension SGLocoNetInterface {
     pxct1 |= (data[2] & 0b10000000) == 0b10000000 ? 0b00000100 : 0
     pxct1 |= (data[3] & 0b10000000) == 0b10000000 ? 0b00001000 : 0
 
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcPeerXfer.rawValue, 0x14, 0x07, 0x00, pxct1, data[0] & 0x7f, data[1] & 0x7f, data[2] & 0x7f, data[3] & 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcPeerXfer.rawValue, 0x14, 0x07, 0x00, pxct1, data[0] & 0x7f, data[1] & 0x7f, data[2] & 0x7f, data[3] & 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], appendCheckSum: true))
     
   }
   /*
@@ -1641,7 +1498,7 @@ extension SGLocoNetInterface {
   }
   */
   public func getFastClock() {
-    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetMessageOpcode.opcRqSlData.rawValue, 0x7b, 0x00], appendCheckSum: true))
+    addToQueue(message: SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7b, 0x00], appendCheckSum: true))
   }
   /*
   public func setFastClock(date:Date, scaleFactor:SGLocoNetFastClockScaleFactor) {
