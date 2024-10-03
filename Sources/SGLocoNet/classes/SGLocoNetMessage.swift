@@ -58,7 +58,7 @@ public class SGLocoNetMessage : NSObject {
   
   private var _messageType : SGLocoNetMessageType?
   
-  private var _functions : [Bool] = []
+  private var _functions : SGFunctionGroup?
   
   // MARK: Public Properties
   
@@ -126,7 +126,7 @@ public class SGLocoNetMessage : NSObject {
   
   public var immPacketRepeatCount : SGLocoNetIMMPacketRepeat? {
   
-    guard messageType == .immPacket || messageType == .s7CVRW else {
+    guard messageType == .immPacket else {
       return nil
     }
     
@@ -136,7 +136,7 @@ public class SGLocoNetMessage : NSObject {
   
   public var dccPacket : SGDCCPacket? {
     
-    guard messageType == .immPacket || messageType == .s7CVRW else {
+    guard messageType == .immPacket else {
       return nil
     }
     
@@ -395,6 +395,15 @@ public class SGLocoNetMessage : NSObject {
       return SGDigitraxProductCode(rawValue: pc)
     }
     return nil
+  }
+  
+  public var querySlotNumber : UInt8? {
+    switch messageType {
+    case .getQuerySlot:
+      return (message[1] & 0x07) + 1
+    default:
+      return nil
+    }
   }
 
   public var serialNumber : UInt16? {
@@ -1067,21 +1076,23 @@ public class SGLocoNetMessage : NSObject {
       return partialSerialNumberHigh! << 8 | partialSerialNumberLow!
     case .zapped:
       return UInt16(message[2])
-    case .locoSpdDirP2:
+    case .locoSpdDirP2, .locoF0F6P2, .locoF7F13P2, .locoF14F20P2, .locoF21F28P2:
       return UInt16(message[3])
     default:
       return nil
     }
   }
 
-  public var functions : [Bool] {
+  public var functions : SGFunctionGroup? {
     
-    if _functions.isEmpty {
+    if _functions == nil {
+      
+      _functions = SGFunctionGroup()
       
       var mask : UInt8 = 0
       
-      func process(index:Int) {
-        _functions.append((message[index] & mask) == mask)
+      func process(byte:Int, index:Int) {
+        _functions?.set(index: index, value: (message[byte] & mask) != 0)
         mask <<= 1
       }
       
@@ -1090,64 +1101,109 @@ public class SGLocoNetMessage : NSObject {
       case .locoDirF0F4P1:
         
         mask = 0b00010000
-        process(index: 2)
+        process(byte: 2, index: 0)
         
         mask = 0b00000001
-        for _ in 1 ... 4 {
-          process(index: 2)
+        for index in 1 ... 4 {
+          process(byte: 2, index: index)
         }
+
+      case .locoF5F8P1:
+        
+        mask = 0b00000001
+        for index in 5 ... 8 {
+          process(byte: 2, index: index)
+        }
+
+      case .locoF0F6P2:
+        
+        mask = 0b00000001
+        for index in 1 ... 4 {
+          process(byte: 4, index: index)
+        }
+
+        process(byte: 4, index: 0)
+
+        for index in 5 ... 6 {
+          process(byte: 4, index: index)
+        }
+
+      case .locoF7F13P2:
+        
+        mask = 0b00000001
+        for index in 7 ... 13 {
+          process(byte: 4, index: index)
+        }
+
+      case .locoF14F20P2:
+        
+        mask = 0b00000001
+        for index in 14 ... 20 {
+          process(byte: 4, index: index)
+        }
+
+      case .locoF21F28P2:
+        
+        mask = 0b00000001
+        for index in 21 ... 27 {
+          process(byte: 4, index: index)
+        }
+        
+        mask = 0b00010000
+        
+        _functions?.set(index: 28, value: (message[1] & mask) == mask)
 
       case .locoSlotDataP1:
         
         mask = 0b00010000
-        process(index: 6)
+        process(byte: 6, index: 0)
         
         mask = 0b00000001
-        for _ in 1 ... 4 {
-          process(index: 6)
+        for index in 1 ... 4 {
+          process(byte: 6, index: index)
         }
         
         mask = 0b00000001
-        for _ in 5 ... 8 {
-          process(index: 10)
+        for index in 5 ... 8 {
+          process(byte: 10, index: index)
         }
         
       case .locoSlotDataP2:
         
         mask = 0b00010000
-        process(index: 10)
+        process(byte: 10, index: 0)
         
         mask = 0b00000001
-        for _ in 1 ... 4 {
-          process(index: 10)
+        for index in 1 ... 4 {
+          process(byte: 10, index: index)
         }
         
         mask = 0b00000001
-        for _ in 5 ... 11 {
-          process(index: 11)
+        for index in 5 ... 11 {
+          process(byte: 11, index: index)
         }
         
         mask = 0b00010000
-        process(index: 9)
+        process(byte: 9, index: 12)
         
         mask = 0b00000001
-        for _ in 13 ... 19 {
-          process(index: 12)
+        for index in 13 ... 19 {
+          process(byte: 12, index: index)
         }
         
         mask = 0b00100000
-        process(index: 9)
+        process(byte: 9, index: 20)
         
         mask = 0b00000001
-        for _ in 21 ... 27 {
-          process(index: 13)
+        for index in 21 ... 27 {
+          process(byte: 13, index: index)
         }
         
         mask = 0b01000000
-        process(index: 9)
+        process(byte: 9, index: 28)
         
       default:
-        break
+        return nil
       }
       
     }
@@ -1156,10 +1212,6 @@ public class SGLocoNetMessage : NSObject {
     
   }
   
-  public var isF9F28Available : Bool? {
-    return functions.isEmpty ? nil : functions.count == 29
-  }
-
   public var groupName : String? {
     switch messageType {
     case .duplexGroupData:
@@ -1464,7 +1516,7 @@ public class SGLocoNetMessage : NSObject {
           case 0x7b:
             _messageType = .getFastClockData
           case 0x7c:
-            break
+            _messageType = .getProgSlotData
           case 0x7d:
             break
           case 0x7e:
@@ -2126,62 +2178,8 @@ public class SGLocoNetMessage : NSObject {
 
       case .opcImmPacket:
         if message[1] == 0x0b && message[2] == 0x7f {
-          
-          if message[3] == 0x34 &&
-             (message[4] & 0b11011100) == 0b00000100 &&
-             (message[7] & 0b11110000) == 0b00100000 &&
-              message[8] == 0 &&
-              message[9] == 0 {
-            _messageType = .locoF9F12IMMLAdr
-          }
-          else if message[3] == 0x24 &&
-             (message[4] & 0b11011111) == 0x2 &&
-             (message[6] & 0b11110000) == 0b00100000 &&
-              message[7] == 0 &&
-              message[8] == 0 &&
-              message[9] == 0 {
-            _messageType = .locoF9F12IMMSAdr
-          }
-          else if message[3] == 0x44 &&
-             (message[4] & 0b11010100) == 0b00000100 &&
-              message[7] == 0x5e &&
-              message[9] == 0 {
-            _messageType = .locoF13F20IMMLAdr
-          }
-          else if message[3] == 0x34 &&
-             (message[4] & 0b11011011) == 0b00000010 &&
-              message[6] == 0x5e &&
-              message[8] == 0 &&
-              message[9] == 0 {
-            _messageType = .locoF13F20IMMSAdr
-          }
-          else if message[3] == 0x44 &&
-             (message[4] & 0b11010100) == 0b00000100 &&
-              message[7] == 0x5f &&
-              (message[8] & 0b11110000) == 0 &&
-              message[9] == 0 {
-            _messageType = .locoF21F28IMMLAdr
-          }
-          else if message[3] == 0x34 &&
-             (message[4] & 0b11011011) == 0b00000010 &&
-              message[6] == 0x5f &&
-              message[8] == 0 &&
-              message[9] == 0 {
-            _messageType = .locoF21F28IMMSAdr
-          }
-          else if message[3] == 0x54 &&
-            (message[4] & 0b10000111) == 0b00000111 &&
-            (message[5] & 0b11000000) == 0b00000000 &&
-            (message[6] & 0b10001000) == 0b00001000 &&
-            (message[7] & 0b11110100) == 0b01100100 {
-            _messageType = .s7CVRW
-          }
-          else if (message[3] & 0b10000000) == 0 {
             _messageType = .immPacket
-          }
-
         }
-
 
       case .opcWrSlDataP2:
         if message[1] == 0x15 {

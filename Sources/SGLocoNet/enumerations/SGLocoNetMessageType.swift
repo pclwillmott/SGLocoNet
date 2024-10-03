@@ -68,6 +68,7 @@ public enum SGLocoNetMessageType: CaseIterable, Sendable {
   case getLocoSlotData
   case getLocoSlotDataAdrP1
   case getLocoSlotDataAdrP2
+  case getProgSlotData
   case getQuerySlot
   case getRosterEntry
   case getRosterTableInfo
@@ -99,17 +100,11 @@ public enum SGLocoNetMessageType: CaseIterable, Sendable {
   case locoF0F6P2
   case locoF5F8P1
   case locoF7F13P2
-  case locoF9F12IMMLAdr
-  case locoF9F12IMMSAdr
   case locoF9F12P1
   case locoF12F20F28P2
-  case locoF13F20IMMLAdr
-  case locoF13F20IMMSAdr
   case locoF13F19P2
   case locoF14F20P2
   case locoF21F27P2
-  case locoF21F28IMMLAdr
-  case locoF21F28IMMSAdr
   case locoF21F28P2
   case locoRep
   case locoSlotDataP1
@@ -148,7 +143,6 @@ public enum SGLocoNetMessageType: CaseIterable, Sendable {
   case routeTableInfoB
   case routeTablePage
   case routesDisabled
-  case s7CVRW
   case s7CVState
   case s7Info
   case sensRepGenIn
@@ -261,17 +255,11 @@ public enum SGLocoNetMessageType: CaseIterable, Sendable {
     .locoF0F6P2              : String(localized: "Locomotive functions F0 to F6 (P2)"),
     .locoF5F8P1              : String(localized: "Locomotive functions F5 to F8 (P1)"),
     .locoF7F13P2             : String(localized: "Locomotive functions F7 to F13 (P2)"),
-    .locoF9F12IMMLAdr        : String(localized: "Locomotive functions F9 to F12 (dcc long address)"),
-    .locoF9F12IMMSAdr        : String(localized: "Locomotive functions F9 to F12 (dcc short address)"),
     .locoF9F12P1             : String(localized: "Locomotive functions F9 to F12 (P1)"),
     .locoF12F20F28P2         : String(localized: "Locomotive functions F12 to F28 (P2)"),
-    .locoF13F20IMMLAdr       : String(localized: "Locomotive functions F13 to F20 (dcc long address)"),
-    .locoF13F20IMMSAdr       : String(localized: "Locomotive functions F13 to F20 (dcc short address)"),
     .locoF13F19P2            : String(localized: "Locomotive functions F13 to F19 (P2)"),
     .locoF14F20P2            : String(localized: "Locomotive functions F14 to F20 (P2)"),
     .locoF21F27P2            : String(localized: "Locomotive functions F21 to F27 (P2)"),
-    .locoF21F28IMMLAdr       : String(localized: "Locomotive functions F21 to F28 (dcc long address)"),
-    .locoF21F28IMMSAdr       : String(localized: "Locomotive functions F21 to F28 (dcc short address)"),
     .locoF21F28P2            : String(localized: "Locomotive functions F21 to F28 (P2)"),
     .locoRep                 : String(localized: "Locomotive Report"),
     .locoSlotDataP1          : String(localized: "Locomotive Slot Data (P1)"),
@@ -310,7 +298,6 @@ public enum SGLocoNetMessageType: CaseIterable, Sendable {
     .routeTableInfoB         : String(localized: "Route Table Information B"),
     .routeTablePage          : String(localized: "Route Table Page"),
     .routesDisabled          : String(localized: "Routes Disabled"),
-    .s7CVRW                  : String(localized: "Series 7 CV Read/Write"),
     .s7CVState               : String(localized: "Series 7 CV State"),
     .s7Info                  : String(localized: "Series 7 Information"),
     .sensRepGenIn            : String(localized: "General Sensor Input Report"),
