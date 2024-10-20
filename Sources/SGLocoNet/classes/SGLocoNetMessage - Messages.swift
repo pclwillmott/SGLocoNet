@@ -38,48 +38,56 @@ public extension SGLocoNetMessage {
   // MARK: COMMAND STATION COMMANDS
   
   static func powerOn() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcGPOn.rawValue], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcGPOn.rawValue])
   }
   
   static func powerOff() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcGPOff.rawValue], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcGPOff.rawValue])
   }
   
   static func getOpSwDataAP1() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7f, 0x00], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7f, 0x00])
+  }
+  
+  static func opSwDataAP1() -> SGLocoNetMessage {
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcSlRdDdata.rawValue, 0x0e, 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+  }
+  
+  static func opSwDataBP1() -> SGLocoNetMessage {
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcSlRdDdata.rawValue, 0x0e, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
   }
   
   static func getOpSwDataBP1() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7e, 0x00], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7e, 0x00])
   }
   
   static func getOpSwDataP2() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7f, 0x40], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7f, 0x40])
   }
   
   static func getLocoSlotDataP1(slotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotRange ~= slotNumber else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, slotNumber, 0x00], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, slotNumber, 0x00])
   }
   
   static func getLocoSlotDataP2(slotBank: UInt8, slotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotBankRange ~= slotBank && slotRange ~= slotNumber else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, slotNumber, slotBank | 0b01000000], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, slotNumber, slotBank | 0b01000000])
   }
   
   static func getProgSlotData() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7c, 0x00], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7c, 0x00])
   }
   
   static func getQuerySlot(querySlot: UInt8) -> SGLocoNetMessage? {
     guard (1 ... 5) ~= querySlot else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x77 + querySlot, 0x41], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x77 + querySlot, 0x41])
   }
 
 
@@ -113,7 +121,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
     
-    return SGLocoNetMessage(data: data, appendCheckSum: true)
+    return SGLocoNetMessage(data: data)
 
   }
   
@@ -148,7 +156,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
     
-    return SGLocoNetMessage(data: data, appendCheckSum: true)
+    return SGLocoNetMessage(data: data)
 
   }
   
@@ -158,70 +166,70 @@ public extension SGLocoNetMessage {
     guard locoNetAddressRange ~= address else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoAdr.rawValue, UInt8(address >> 7), UInt8(address & 0x7f)], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoAdr.rawValue, UInt8(address >> 7), UInt8(address & 0x7f)])
   }
   
   static func getLocoSlotDataP2(address: UInt16) -> SGLocoNetMessage?{
     guard locoNetAddressRange ~= address else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoAdrP2.rawValue, UInt8(address >> 7), UInt8(address & 0x7f)], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoAdrP2.rawValue, UInt8(address >> 7), UInt8(address & 0x7f)])
   }
 
   static func setLocoSlotStat1P1(slotNumber:UInt8, stat1:UInt8) -> SGLocoNetMessage? {
     guard slotRange ~= slotNumber && stat1 < 0x80 else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcSlotStat1.rawValue, slotNumber, stat1], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcSlotStat1.rawValue, slotNumber, stat1])
   }
   
   static func setLocoSlotStat1P2(slotBank:UInt8, slotNumber:UInt8, stat1:UInt8) -> SGLocoNetMessage? {
     guard slotBankRange ~= slotBank && slotRange ~= slotNumber && stat1 < 0x80 else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | slotBank, slotNumber, 0x60, stat1], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | slotBank, slotNumber, 0x60, stat1])
   }
 
   static func moveSlotP1(sourceSlotNumber: UInt8, destinationSlotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotRange ~= sourceSlotNumber && slotRange ~= destinationSlotNumber && sourceSlotNumber != destinationSlotNumber else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcMoveSlots.rawValue, sourceSlotNumber, destinationSlotNumber], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcMoveSlots.rawValue, sourceSlotNumber, destinationSlotNumber])
   }
   
   static func moveSlotP2(sourceSlotBank: UInt8, sourceSlotNumber: UInt8, destinationSlotBank: UInt8, destinationSlotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotBankRange ~= sourceSlotBank && slotRange ~= sourceSlotNumber && slotBankRange ~= destinationSlotBank && slotRange ~= destinationSlotNumber && (sourceSlotNumber != destinationSlotNumber || sourceSlotBank != destinationSlotBank) else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | sourceSlotBank, sourceSlotNumber, destinationSlotBank, destinationSlotNumber], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | sourceSlotBank, sourceSlotNumber, destinationSlotBank, destinationSlotNumber])
   }
 
   static func setLocoSlotInUseP1(slotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotRange ~= slotNumber else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcMoveSlots.rawValue, slotNumber, slotNumber], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcMoveSlots.rawValue, slotNumber, slotNumber])
   }
   
   static func setLocoSlotInUseP2(slotBank: UInt8, slotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotBankRange ~= slotBank && slotRange ~= slotNumber else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | slotBank, slotNumber, slotBank, slotNumber], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | slotBank, slotNumber, slotBank, slotNumber])
   }
 
   static func locoSpdP1(slotNumber: UInt8, speed: UInt8) -> SGLocoNetMessage? {
     guard slotRange ~= slotNumber && (0 ... 127) ~= speed else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoSpd.rawValue, slotNumber, speed], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoSpd.rawValue, slotNumber, speed])
   }
   
   static func locoSpdDirP2(slotBank: UInt8, slotNumber: UInt8, speed: UInt8, direction: SGLocoNetLocomotiveDirection, throttleID: UInt16) -> SGLocoNetMessage? {
     guard slotBankRange ~= slotBank && slotRange ~= slotNumber && (0 ... 127) ~= speed else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | (direction == .reverse ? 0b00001000 : 0), slotNumber, UInt8(throttleID & 0x7f), speed], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | (direction == .reverse ? 0b00001000 : 0), slotNumber, UInt8(throttleID & 0x7f), speed])
   }
 
   static func locoDirF0F4P1(slotNumber: UInt8, direction:SGLocoNetLocomotiveDirection, functions: SGFunctionGroup) -> SGLocoNetMessage? {
@@ -238,7 +246,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
     
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoDirF.rawValue, slotNumber, dirf], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoDirF.rawValue, slotNumber, dirf])
 
   }
 
@@ -256,7 +264,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
 
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoSnd.rawValue, slotNumber, fnx], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoSnd.rawValue, slotNumber, fnx])
 
   }
   
@@ -276,7 +284,7 @@ public extension SGLocoNetMessage {
     fnx |= functions.get(index: 5) ? 0b00100000 : 0
     fnx |= functions.get(index: 6) ? 0b01000000 : 0
 
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | 0b00010000, slotNumber, UInt8(throttleID & 0x7f), fnx], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | 0b00010000, slotNumber, UInt8(throttleID & 0x7f), fnx])
 
   }
   
@@ -295,7 +303,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
     
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | 0b00011000, slotNumber, UInt8(throttleID & 0x7f), fnx], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | 0b00011000, slotNumber, UInt8(throttleID & 0x7f), fnx])
 
   }
   
@@ -314,7 +322,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
 
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | 0b00100000, slotNumber, UInt8(throttleID & 0x7f), fnx], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | 0b00100000, slotNumber, UInt8(throttleID & 0x7f), fnx])
 
   }
   
@@ -333,7 +341,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
 
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | UInt8(functions.get(index: 28) ? 0b00110000 : 0b00101000), slotNumber, UInt8(throttleID & 0x7f), fnx], appendCheckSum: true)
+    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | UInt8(functions.get(index: 28) ? 0b00110000 : 0b00101000), slotNumber, UInt8(throttleID & 0x7f), fnx])
 
   }
   
@@ -498,5 +506,6 @@ public extension SGLocoNetMessage {
         
   }
 
+  
 }
 

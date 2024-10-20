@@ -37,11 +37,17 @@ public class SGLocoNetMessage : NSObject {
   
   // MARK: Constructors
   
-  public init(data:[UInt8], appendCheckSum: Bool = false) {
-    self.message = data
-    if appendCheckSum {
-      self.message.append(SGLocoNetMessage.checkSum(data: message))
+  public init(data:[UInt8]) {
+    message = data
+    super.init()
+  }
+
+  public init?(dataWithCheckSum data:[UInt8]) {
+    guard SGLocoNetMessage.isCheckSumOK(message: data) else {
+      return nil
     }
+    message = data
+    message.removeLast()
     super.init()
   }
 
@@ -63,6 +69,12 @@ public class SGLocoNetMessage : NSObject {
   // MARK: Public Properties
   
   public var message : [UInt8]
+  
+  public var messageWithChecksum : [UInt8] {
+    var data = message
+    data.append(SGLocoNetMessage.checkSum(data: data))
+    return data
+  }
   
   public var opCode : SGLocoNetOpcode {
     return SGLocoNetOpcode(rawValue: message[0]) ?? .opcUnknown
@@ -87,21 +99,9 @@ public class SGLocoNetMessage : NSObject {
 
   }
   
-  public var isCheckSumOK : Bool {
-    var checkSum : UInt8 = 0xff
-    for byte in message {
-      checkSum ^= byte
-    }
-    return checkSum == 0
-  }
-  
   public var timeStamp : TimeInterval = 0.0
   
   public var timeSinceLastMessage : TimeInterval = 0.0
-  
-//  public var timeoutCode : UInt8 {
-//    return message.count == 2 && message[0] == 0x7f ? message[1] : 0x00
-//  }
   
   public var slotData : [UInt8] {
     var slotData : [UInt8] = []
@@ -162,6 +162,168 @@ public class SGLocoNetMessage : NSObject {
     packet.append(crc)
     
     return SGDCCPacket(packet: packet)
+    
+  }
+  
+  public var isP2Implemented : Bool? {
+  
+    get {
+      switch opCode {
+      case .opcSlRdDdata, .opcWrSlData:
+        let mask : UInt8 = 0b01000000
+        return (message[7] & mask) != 0
+      default:
+        return nil
+      }
+    }
+    
+    set(value) {
+      switch opCode {
+      case .opcSlRdDdata, .opcWrSlData:
+        let mask : UInt8 = 0b01000000
+        message[7] &= ~mask
+        message[7] |= value! ? mask : 0
+      default:
+        break
+      }
+    }
+    
+  }
+
+  public var isP1Implemented : Bool? {
+  
+    get {
+      switch opCode {
+      case .opcSlRdDdata, .opcWrSlData:
+        let mask : UInt8 = 0b00000100
+        return (message[7] & mask) != 0
+      default:
+        return nil
+      }
+    }
+    
+    set(value) {
+      switch opCode {
+      case .opcSlRdDdata, .opcWrSlData:
+        let mask : UInt8 = 0b00000100
+        message[7] &= ~mask
+        message[7] |= value! ? mask : 0
+      default:
+        break
+      }
+    }
+    
+  }
+
+  public var isProgrammingTrackBusy : Bool? {
+  
+    get {
+      switch opCode {
+      case .opcSlRdDdata, .opcWrSlData:
+        let mask : UInt8 = 0b00001000
+        return (message[7] & mask) != 0
+      default:
+        return nil
+      }
+    }
+    
+    set(value) {
+      switch opCode {
+      case .opcSlRdDdata, .opcWrSlData:
+        let mask : UInt8 = 0b00001000
+        message[7] &= ~mask
+        message[7] |= value! ? mask : 0
+      default:
+        break
+      }
+    }
+    
+  }
+
+  public var isTrackPaused : Bool? {
+  
+    get {
+      switch opCode {
+      case .opcSlRdDdata, .opcWrSlData:
+        let mask : UInt8 = 0b00000010
+        return (message[7] & mask) != 0
+      default:
+        return nil
+      }
+    }
+    
+    set(value) {
+      switch opCode {
+      case .opcSlRdDdata, .opcWrSlData:
+        let mask : UInt8 = 0b00000010
+        message[7] &= ~mask
+        message[7] |= value! ? mask : 0
+      default:
+        break
+      }
+    }
+    
+  }
+
+  public var isPowerUp : Bool? {
+  
+    get {
+      switch opCode {
+      case .opcSlRdDdata, .opcWrSlData:
+        let mask : UInt8 = 0b00000001
+        return (message[7] & mask) != 0
+      default:
+        return nil
+      }
+    }
+    
+    set(value) {
+      switch opCode {
+      case .opcSlRdDdata, .opcWrSlData:
+        let mask : UInt8 = 0b00000001
+        message[7] &= ~mask
+        message[7] |= value! ? mask : 0
+      default:
+        break
+      }
+    }
+    
+  }
+  
+  public var digitraxCommandStationType : SGDigitraxCommandStationType? {
+    
+    get {
+      switch messageType {
+      case .opSwDataAP1:
+        if let cs = SGDigitraxCommandStationType(rawValue: message[11]) {
+          return cs
+        }
+        else if let isP1Implemented, !isP1Implemented {
+          return .dt200
+        }
+      default:
+        break
+      }
+      return nil
+    }
+    
+    set(value) {
+      guard let value else {
+        return
+      }
+      switch messageType {
+      case .opSwDataAP1:
+        switch value {
+        case .dt200:
+          message[11] = 0
+          isP1Implemented = false
+        default:
+          message[11] = value.rawValue
+        }
+      default:
+        break
+      }
+    }
     
   }
   
@@ -2327,8 +2489,57 @@ public class SGLocoNetMessage : NSObject {
     return _messageType!
 
   }
+  
+  // MARK: Public Methods
+  
+  public func getOpSwState(opSwNumber:Int) -> Bool? {
+    switch messageType {
+    case .opSwDataAP1:
+      guard (1 ... 64) ~= opSwNumber else {
+        return nil
+      }
+      let index = opSwNumber - 1
+      return message[index / 8 + (index < 4 ? 3 : 4)] & (1 << (index % 8)) != 0
+    case .opSwDataBP1:
+      guard (65 ... 128) ~= opSwNumber else {
+        return nil
+      }
+      let index = opSwNumber - 65
+      return message[index / 8 + (index < 4 ? 3 : 4)] & (1 << (index % 8)) != 0
+    default:
+      break
+    }
+    return nil
+  }
+  
+  public func setOpSwState(opSwNumber:Int, opSwState:Bool) {
+    switch messageType {
+    case .opSwDataAP1:
+      guard (1 ... 64) ~= opSwNumber else {
+        return
+      }
+      let index = opSwNumber - 1
+      let byte = index / 8 + (index < 4 ? 3 : 4)
+      let bit = index % 8
+      let mask : UInt8 = (bit == 7) ? 0 : (1 << bit)
+      message[byte] &= ~mask
+      message[byte] |=  opSwState ? mask : 0
+    case .opSwDataBP1:
+      guard (65 ... 128) ~= opSwNumber else {
+        return
+      }
+      let index = opSwNumber - 65
+      let byte = index / 8 + (index < 4 ? 3 : 4)
+      let bit = index % 8
+      let mask : UInt8 = (bit == 7) ? 0 : (1 << bit)
+      message[byte] &= ~mask
+      message[byte] |=  opSwState ? mask : 0
+    default:
+      break
+    }
+  }
 
-  // MARK: Public Class Properties
+  // MARK: Public Static Properties
   
   public static let locoNetAddressRange = UInt16(1) ... UInt16(10239)
   
@@ -2346,4 +2557,22 @@ public class SGLocoNetMessage : NSObject {
     return cs
   }
   
+  public static func isCheckSumOK(message: [UInt8]) -> Bool {
+    var cs : UInt8 = 0xff
+    for byte in message {
+      cs ^= byte
+    }
+    return cs == 0
+  }
+  
+  // MARK: Operators
+  
+  public static func ==(lhs:SGLocoNetMessage, rhs:SGLocoNetMessage) -> Bool {
+    return lhs.message == rhs.message
+  }
+
+  public static func !=(lhs:SGLocoNetMessage, rhs:SGLocoNetMessage) -> Bool {
+    return lhs.message != rhs.message
+  }
+
 }

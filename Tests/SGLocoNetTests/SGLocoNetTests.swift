@@ -10,8 +10,7 @@ import Testing
   #expect(message != nil)
   
   if let message {
-    #expect(message.isCheckSumOK)
-    #expect(message.message == [0x83, 0x7c])
+    #expect(message.message == [0x83])
     #expect(message.messageType == .pwrOn)
   }
   
@@ -20,8 +19,7 @@ import Testing
   #expect(message != nil)
   
   if let message {
-    #expect(message.isCheckSumOK)
-    #expect(message.message == [0x82, 0x7d])
+    #expect(message.message == [0x82])
     #expect(message.messageType == .pwrOff)
   }
   
@@ -30,9 +28,32 @@ import Testing
   #expect(message != nil)
   
   if let message {
-    #expect(message.isCheckSumOK)
-    #expect(message.message == [0xbb, 0x7f, 0x00, 0x3b])
+    #expect(message.message == [0xbb, 0x7f, 0x00])
     #expect(message.messageType == .getOpSwDataAP1)
+  }
+  
+  message = SGLocoNetMessage.opSwDataAP1()
+  
+  #expect(message != nil)
+  
+  if let message {
+    #expect(message.messageType == .opSwDataAP1)
+    
+    for _ in 1 ... 256 {
+      var opSwState : [Bool] = []
+      for opSw in 0 ..< 64 {
+        opSwState.append(Int.random(in: 0 ... 255) % 2 == 0)
+        message.setOpSwState(opSwNumber: opSw + 1, opSwState: opSwState[opSw])
+      }
+      for opSw in 0 ..< 64 {
+        if opSw % 8 == 7 {
+          #expect(message.getOpSwState(opSwNumber: opSw + 1) == false)
+        }
+        else {
+          #expect(message.getOpSwState(opSwNumber: opSw + 1) == opSwState[opSw])
+        }
+      }
+    }
   }
   
   message = SGLocoNetMessage.getOpSwDataBP1()
@@ -40,18 +61,49 @@ import Testing
   #expect(message != nil)
   
   if let message {
-    #expect(message.isCheckSumOK)
-    #expect(message.message == [0xbb, 0x7e, 0x00, 0x3a])
+    #expect(message.message == [0xbb, 0x7e, 0x00])
     #expect(message.messageType == .getOpSwDataBP1)
   }
   
+  message = SGLocoNetMessage.getOpSwDataAP1()
+  
+  #expect(message != nil)
+  
+  if let message {
+    #expect(message.message == [0xbb, 0x7f, 0x00])
+    #expect(message.messageType == .getOpSwDataAP1)
+  }
+  
+  message = SGLocoNetMessage.opSwDataBP1()
+  
+  #expect(message != nil)
+  
+  if let message {
+    #expect(message.messageType == .opSwDataBP1)
+    
+    for _ in 1 ... 256 {
+      var opSwState : [Bool] = []
+      for opSw in 64 ..< 128 {
+        opSwState.append(Int.random(in: 0 ... 255) % 2 == 0)
+        message.setOpSwState(opSwNumber: opSw + 1, opSwState: opSwState[opSw - 64])
+      }
+      for opSw in 64 ..< 128 {
+        if opSw % 8 == 7 {
+          #expect(message.getOpSwState(opSwNumber: opSw + 1) == false)
+        }
+        else {
+          #expect(message.getOpSwState(opSwNumber: opSw + 1) == opSwState[opSw - 64])
+        }
+      }
+    }
+  }
+
   message = SGLocoNetMessage.getProgSlotData()
   
   #expect(message != nil)
   
   if let message {
-    #expect(message.isCheckSumOK)
-    #expect(message.message == [0xbb, 0x7c, 0x00, 0x38])
+    #expect(message.message == [0xbb, 0x7c, 0x00])
     #expect(message.messageType == .getProgSlotData)
   }
 
@@ -60,8 +112,7 @@ import Testing
   #expect(message != nil)
   
   if let message {
-    #expect(message.isCheckSumOK)
-    #expect(message.message == [0xbb, 0x7f, 0x40, 0x7b])
+    #expect(message.message == [0xbb, 0x7f, 0x40])
     #expect(message.messageType == .getOpSwDataP2)
   }
   
@@ -80,7 +131,6 @@ import Testing
     #expect(message != nil)
     
     if let message {
-      #expect(message.isCheckSumOK)
       #expect(message.messageType == .getQuerySlot)
       #expect(message.querySlotNumber == querySlot)
     }
@@ -102,7 +152,6 @@ import Testing
     #expect(message != nil)
     
     if let message {
-      #expect(message.isCheckSumOK)
       #expect(message.messageType == .getLocoSlotData)
       #expect(message.slotNumber == slotNumber)
     }
@@ -130,7 +179,6 @@ import Testing
       #expect(message != nil)
       
       if let message {
-        #expect(message.isCheckSumOK)
         #expect(message.messageType == .getLocoSlotData)
         #expect(message.slotBank == slotBank)
         #expect(message.slotNumber == slotNumber)
@@ -149,7 +197,6 @@ import Testing
   #expect(message?.dccPacket != nil)
 
   if let message {
-    #expect(message.isCheckSumOK)
     #expect(dccPacket!.packet == message.dccPacket!.packet)
     #expect(message.messageType == .immPacket)
     #expect(message.dccPacket!.packetType == .digitalDecoderIdlePacket)
@@ -165,7 +212,6 @@ import Testing
   #expect(message?.dccPacket != nil)
 
   if let message {
-    #expect(message.isCheckSumOK)
     #expect(dccPacket!.packet == message.dccPacket!.packet)
     #expect(message.messageType == .immPacket)
     #expect(message.dccPacket!.packetType == .speedStepControl128)
@@ -178,7 +224,6 @@ import Testing
 
   if let message {
     #expect(message.messageType == .immPacket)
-    #expect(message.isCheckSumOK)
     #expect(message.immPacketRepeatCount == .repeat1)
     #expect(message.message[5] == 0x81 & 0x7f)
     #expect(message.message[6] == 0x82 & 0x7f)
@@ -473,7 +518,7 @@ import Testing
       
       if let message {
         #expect(message.messageType == .locoSpdP1)
-        #expect(message.isCheckSumOK)
+        
         #expect(message.slotNumber == slotNumber)
         #expect(message.speed == speed)
       }
@@ -512,7 +557,7 @@ import Testing
           
           if let message {
             #expect(message.messageType == .locoSpdDirP2)
-            #expect(message.isCheckSumOK)
+            
             #expect(message.slotNumber == slotNumber)
             #expect(message.slotBank == slotBank)
             #expect(message.speed == speed)
@@ -553,7 +598,7 @@ import Testing
       #expect(message != nil)
       
       if let message {
-        #expect(message.isCheckSumOK)
+        
         #expect(message.messageType == .locoDirF0F4P1)
         #expect(message.direction == direction)
         #expect(message.slotNumber == slotNumber)
@@ -586,7 +631,7 @@ import Testing
     #expect(message != nil)
     
     if let message {
-      #expect(message.isCheckSumOK)
+      
       #expect(message.messageType == .locoF5F8P1)
       #expect(message.slotNumber == slotNumber)
       #expect(message.functions! == functions)
@@ -623,7 +668,7 @@ import Testing
       #expect(message != nil)
       
       if let message {
-        #expect(message.isCheckSumOK)
+        
         #expect(message.messageType == .locoF0F6P2)
         #expect(message.slotBank == slotBank)
         #expect(message.slotNumber == slotNumber)
@@ -664,7 +709,7 @@ import Testing
       #expect(message != nil)
       
       if let message {
-        #expect(message.isCheckSumOK)
+        
         #expect(message.messageType == .locoF7F13P2)
         #expect(message.slotBank == slotBank)
         #expect(message.slotNumber == slotNumber)
@@ -705,7 +750,7 @@ import Testing
       #expect(message != nil)
       
       if let message {
-        #expect(message.isCheckSumOK)
+        
         #expect(message.messageType == .locoF14F20P2)
         #expect(message.slotBank == slotBank)
         #expect(message.slotNumber == slotNumber)
@@ -746,7 +791,7 @@ import Testing
       #expect(message != nil)
       
       if let message {
-        #expect(message.isCheckSumOK)
+        
         #expect(message.messageType == .locoF21F28P2)
         #expect(message.slotBank == slotBank)
         #expect(message.slotNumber == slotNumber)
@@ -781,7 +826,7 @@ import Testing
     #expect(message != nil)
     
     if let message {
-      #expect(message.isCheckSumOK)
+      
       #expect(message.messageType == .immPacket)
       #expect(message.dccPacket != nil)
       if let dccPacket = message.dccPacket {
@@ -822,7 +867,7 @@ import Testing
     #expect(message != nil)
     
     if let message {
-      #expect(message.isCheckSumOK)
+      
       #expect(message.messageType == .immPacket)
       #expect(message.dccPacket != nil)
       if let dccPacket = message.dccPacket {
@@ -863,7 +908,7 @@ import Testing
     #expect(message != nil)
     
     if let message {
-      #expect(message.isCheckSumOK)
+      
       #expect(message.messageType == .immPacket)
       #expect(message.dccPacket != nil)
       if let dccPacket = message.dccPacket {
@@ -904,7 +949,7 @@ import Testing
     #expect(message != nil)
     
     if let message {
-      #expect(message.isCheckSumOK)
+      
       #expect(message.messageType == .immPacket)
       #expect(message.dccPacket != nil)
       if let dccPacket = message.dccPacket {
@@ -945,7 +990,7 @@ import Testing
     #expect(message != nil)
     
     if let message {
-      #expect(message.isCheckSumOK)
+      
       #expect(message.messageType == .immPacket)
       #expect(message.dccPacket != nil)
       if let dccPacket = message.dccPacket {
@@ -986,7 +1031,7 @@ import Testing
     #expect(message != nil)
     
     if let message {
-      #expect(message.isCheckSumOK)
+      
       #expect(message.messageType == .immPacket)
       #expect(message.dccPacket != nil)
       if let dccPacket = message.dccPacket {
@@ -1027,7 +1072,7 @@ import Testing
     #expect(message != nil)
     
     if let message {
-      #expect(message.isCheckSumOK)
+      
       #expect(message.messageType == .immPacket)
       #expect(message.dccPacket != nil)
       if let dccPacket = message.dccPacket {

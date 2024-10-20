@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// SGLocoNetDecoderProtocol.swift
+// SGDigitraxCommandStationType.swift
 //
 // This Swift source file is a part of the SGLocoNet package
 // by Paul C. L. Willmott.
@@ -27,48 +27,45 @@
 //
 // Revision History:
 //
-//     20/09/2024  Paul Willmott - SGLocoNetDecoderProtocol.swift created
+//     20/10/2024  Paul Willmott - SGDigitraxCommandStationType.swift created
 // -----------------------------------------------------------------------------
 
 import Foundation
 
-public enum SGLocoNetDecoderProtocol : UInt8, CaseIterable, Sendable {
+public enum SGDigitraxCommandStationType : UInt8, Sendable, CaseIterable {
   
   // MARK: Enumeration
   
-  case dcc28     = 0b00000000
-  case trinary   = 0b00000001
-  case dcc14     = 0b00000010
-  case dcc128    = 0b00000011
-  case dcc28FX   = 0b00000100
-  case trinaryFX = 0b00000101
-  case dcc14FX   = 0b00000110
-  case dcc128FX  = 0b00000111
+  case dcs100     = 0x78
+  case db150      = 0x00
+  case dcs50      = 0x08
+  case dcs51      = 0x0c
+  case dcs52      = 0x0d
+  case dcs210     = 0x1b
+  case dcs240     = 0x1c
+  case dcs210Plus = 0x1a
+  case dcs240Plus = 0x1d
+  case dt200      = 0xff
 
   // MARK: Public Properties
   
-  public var setMask : UInt8 {
-    return self.rawValue
-  }
-  
   public var title : String {
-    return SGLocoNetDecoderProtocol.titles[self]!
+    return SGDigitraxCommandStationType.titles[self]!
   }
   
   // MARK: Private Static Properties
   
-  private static let titles : [SGLocoNetDecoderProtocol:String] = [
-    .dcc28    : String(localized: "DCC 28",           comment: "Train control protocol selection"),
-    .trinary  : String(localized: "Motorola Trinary", comment: "Train control protocol selection"),
-    .dcc14    : String(localized: "DCC 14",           comment: "Train control protocol selection"),
-    .dcc128   : String(localized: "DCC 128",          comment: "Train control protocol selection"),
-    .dcc28FX  : String(localized: "DCC 28 FX",        comment: "Train control protocol selection"),
-    .dcc14FX  : String(localized: "DCC 14 FX",        comment: "Train control protocol selection"),
-    .dcc128FX : String(localized: "DCC 128 FX",       comment: "Train control protocol selection"),
+  private static let titles : [SGDigitraxCommandStationType:String] = [
+    .dt200      : String(localized: "Digitrax DT200"),
+    .dcs100     : String(localized: "Digitrax DCS100 or DCS200"),
+    .db150      : String(localized: "Digitrax DB150"),
+    .dcs50      : String(localized: "Digitrax DCS50"),
+    .dcs51      : String(localized: "Digitrax DCS51"),
+    .dcs52      : String(localized: "Digitrax DCS52"),
+    .dcs210     : String(localized: "Digitrax DCS210"),
+    .dcs240     : String(localized: "Digitrax DCS240"),
+    .dcs210Plus : String(localized: "Digitrax DCS210+"),
+    .dcs240Plus : String(localized: "Digitrax DCS240+"),
   ]
-  
-  // MARK: Public Class Properties
-  
-  public static let protectMask : UInt8 = 0b11111000
 
 }

@@ -87,7 +87,7 @@ public class SGLocoNetInterface : NSObject   {
       state = .sendingMessage
       retryCount = 10
       startTimeoutTimer(numberOfBytes: sending.message.count)
-      delegate.sendData?(interface: self, data: sending.message)
+      delegate.sendData?(interface: self, data: sending.messageWithChecksum)
     }
 
   }
@@ -112,7 +112,7 @@ public class SGLocoNetInterface : NSObject   {
           state = .sendingMessage
           retryCount -= 1
           startTimeoutTimer(numberOfBytes: sending.message.count)
-          delegate?.sendData?(interface: self, data: sending.message)
+          delegate?.sendData?(interface: self, data: sending.messageWithChecksum)
         }
       default:
         state = .idle
@@ -195,7 +195,7 @@ public class SGLocoNetInterface : NSObject   {
       // extract the message bytes and restart if an opcode is found
       // before the end of the message
       
-      var message : [UInt8] = []
+      var data : [UInt8] = []
        
       var restart = false
       
@@ -208,24 +208,24 @@ public class SGLocoNetInterface : NSObject   {
           break
         }
         
-        message.append(cc)
+        data.append(cc)
         
         buffer.removeFirst()
         
       }
       
-      // Process message if no high bits set in the message
+      // Process message if no high bits set in the message and the checksum
+      // is OK.
         
-      if !restart {
+      if !restart, var locoNetMessage = SGLocoNetMessage(dataWithCheckSum: data) {
         
-        let locoNetMessage = SGLocoNetMessage(data: message)
         locoNetMessage.timeStamp = Date.timeIntervalSinceReferenceDate
         locoNetMessage.timeSinceLastMessage = locoNetMessage.timeStamp - lastTimeStamp
         lastTimeStamp = locoNetMessage.timeStamp
-
+        
         if let sending, let delegate {
           
-          if message == sending.message {
+          if locoNetMessage == sending {
             stopTimeoutTimer()
             switch sending.messageType {
             case .immPacket:
@@ -286,7 +286,7 @@ public class SGLocoNetInterface : NSObject   {
         for (_, observer) in observers {
           observer.locoNetInterface?(sender: self, didReceive: locoNetMessage)
         }
-
+        
       }
 
     }
