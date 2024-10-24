@@ -38,56 +38,60 @@ public extension SGLocoNetMessage {
   // MARK: COMMAND STATION COMMANDS
   
   static func powerOn() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcGPOn.rawValue])
+    return SGLocoNetMessage(.opcGPOn)
   }
   
   static func powerOff() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcGPOff.rawValue])
+    return SGLocoNetMessage(.opcGPOff)
   }
   
   static func getOpSwDataAP1() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7f, 0x00])
+    return SGLocoNetMessage(.opcRqSlData, data: [0x7f, 0x00])
   }
   
   static func opSwDataAP1() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcSlRdDdata.rawValue, 0x0e, 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    return SGLocoNetMessage(.opcSlRdDdata, data: [0x0e, 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
   }
   
   static func opSwDataBP1() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcSlRdDdata.rawValue, 0x0e, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    return SGLocoNetMessage(.opcSlRdDdata, data: [0x0e, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
   }
   
   static func getOpSwDataBP1() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7e, 0x00])
+    return SGLocoNetMessage(.opcRqSlData, data: [0x7e, 0x00])
   }
   
   static func getOpSwDataP2() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7f, 0x40])
+    return SGLocoNetMessage(.opcRqSlData, data: [0x7f, 0x40])
   }
   
   static func getLocoSlotDataP1(slotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotRange ~= slotNumber else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, slotNumber, 0x00])
+    return SGLocoNetMessage(.opcRqSlData, data: [slotNumber, 0x00])
   }
   
   static func getLocoSlotDataP2(slotBank: UInt8, slotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotBankRange ~= slotBank && slotRange ~= slotNumber else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, slotNumber, slotBank | 0b01000000])
+    return SGLocoNetMessage(.opcRqSlData, data: [slotNumber, slotBank | 0b01000000])
   }
   
   static func getProgSlotData() -> SGLocoNetMessage {
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x7c, 0x00])
+    return SGLocoNetMessage(.opcRqSlData, data: [0x7c, 0x00])
+  }
+  
+  static func getFastClock() -> SGLocoNetMessage {
+    return SGLocoNetMessage(.opcRqSlData, data: [0x7b, 0x00])
   }
   
   static func getQuerySlot(querySlot: UInt8) -> SGLocoNetMessage? {
     guard (1 ... 5) ~= querySlot else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcRqSlData.rawValue, 0x77 + querySlot, 0x41])
+    return SGLocoNetMessage(.opcRqSlData, data: [0x77 + querySlot, 0x41])
   }
 
 
@@ -100,7 +104,6 @@ public extension SGLocoNetMessage {
     }
     
     var data : [UInt8] = [
-      SGLocoNetOpcode.opcImmPacket.rawValue,
       0x0b,
       0x7f,
       (UInt8(packet.count) << 4) | repeatCount.rawValue,
@@ -116,12 +119,12 @@ public extension SGLocoNetMessage {
     
     for index in 0 ..< packet.count {
       let byte = packet[index]
-      data[4] |= (byte & 0x80) != 0 ? mask : 0
-      data[5 + index] = byte & 0x7f
+      data[3] |= (byte & 0x80) != 0 ? mask : 0
+      data[4 + index] = byte & 0x7f
       mask <<= 1
     }
     
-    return SGLocoNetMessage(data: data)
+    return SGLocoNetMessage(.opcImmPacket, data: data)
 
   }
   
@@ -135,7 +138,6 @@ public extension SGLocoNetMessage {
     // is added by the Command Station.
     
     var data : [UInt8] = [
-      SGLocoNetOpcode.opcImmPacket.rawValue,
       0x0b,
       0x7f,
       (UInt8(dccPacket.packet.count - 1) << 4) | repeatCount.rawValue,
@@ -156,7 +158,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
     
-    return SGLocoNetMessage(data: data)
+    return SGLocoNetMessage(.opcImmPacket, data: data)
 
   }
   
@@ -166,70 +168,90 @@ public extension SGLocoNetMessage {
     guard locoNetAddressRange ~= address else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoAdr.rawValue, UInt8(address >> 7), UInt8(address & 0x7f)])
+    return SGLocoNetMessage(.opcLocoAdr, data: [UInt8(address >> 7), UInt8(address & 0x7f)])
   }
   
   static func getLocoSlotDataP2(address: UInt16) -> SGLocoNetMessage?{
     guard locoNetAddressRange ~= address else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoAdrP2.rawValue, UInt8(address >> 7), UInt8(address & 0x7f)])
+    return SGLocoNetMessage(.opcLocoAdrP2, data: [UInt8(address >> 7), UInt8(address & 0x7f)])
+  }
+  
+  static func setLocoSlotDataP1(baseMessage: SGLocoNetMessage = SGLocoNetMessage(.opcSlRdDdata, data: [0x0e, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])) -> SGLocoNetMessage? {
+    
+    guard baseMessage.messageType == .locoSlotDataP1 || baseMessage.messageType == .setLocoSlotDataP1 else {
+      return nil
+    }
+    
+    return SGLocoNetMessage(.opcWrSlData, data: baseMessage._data)
+
+  }
+
+  static func setLocoSlotDataP2(baseMessage: SGLocoNetMessage = SGLocoNetMessage(.opcSlRdDdataP2, data: [0x15, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])) -> SGLocoNetMessage? {
+    
+    guard baseMessage.messageType == .locoSlotDataP2 || baseMessage.messageType == .setLocoSlotDataP2 else {
+      return nil
+    }
+    
+    return SGLocoNetMessage(.opcWrSlDataP2, data: baseMessage._data)
+
   }
 
   static func setLocoSlotStat1P1(slotNumber:UInt8, stat1:UInt8) -> SGLocoNetMessage? {
     guard slotRange ~= slotNumber && stat1 < 0x80 else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcSlotStat1.rawValue, slotNumber, stat1])
+    return SGLocoNetMessage(.opcSlotStat1, data: [slotNumber, stat1])
   }
   
   static func setLocoSlotStat1P2(slotBank:UInt8, slotNumber:UInt8, stat1:UInt8) -> SGLocoNetMessage? {
     guard slotBankRange ~= slotBank && slotRange ~= slotNumber && stat1 < 0x80 else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | slotBank, slotNumber, 0x60, stat1])
+    return SGLocoNetMessage(.opcD4Group, data: [0b00111000 | slotBank, slotNumber, 0x60, stat1])
   }
 
   static func moveSlotP1(sourceSlotNumber: UInt8, destinationSlotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotRange ~= sourceSlotNumber && slotRange ~= destinationSlotNumber && sourceSlotNumber != destinationSlotNumber else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcMoveSlots.rawValue, sourceSlotNumber, destinationSlotNumber])
+    return SGLocoNetMessage(.opcMoveSlots, data: [sourceSlotNumber, destinationSlotNumber])
   }
   
   static func moveSlotP2(sourceSlotBank: UInt8, sourceSlotNumber: UInt8, destinationSlotBank: UInt8, destinationSlotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotBankRange ~= sourceSlotBank && slotRange ~= sourceSlotNumber && slotBankRange ~= destinationSlotBank && slotRange ~= destinationSlotNumber && (sourceSlotNumber != destinationSlotNumber || sourceSlotBank != destinationSlotBank) else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | sourceSlotBank, sourceSlotNumber, destinationSlotBank, destinationSlotNumber])
+    return SGLocoNetMessage(.opcD4Group, data: [0b00111000 | sourceSlotBank, sourceSlotNumber, destinationSlotBank, destinationSlotNumber])
   }
 
   static func setLocoSlotInUseP1(slotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotRange ~= slotNumber else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcMoveSlots.rawValue, slotNumber, slotNumber])
+    return SGLocoNetMessage(.opcMoveSlots, data: [slotNumber, slotNumber])
   }
   
   static func setLocoSlotInUseP2(slotBank: UInt8, slotNumber: UInt8) -> SGLocoNetMessage? {
     guard slotBankRange ~= slotBank && slotRange ~= slotNumber else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD4Group.rawValue, 0b00111000 | slotBank, slotNumber, slotBank, slotNumber])
+    return SGLocoNetMessage(.opcD4Group, data: [0b00111000 | slotBank, slotNumber, slotBank, slotNumber])
   }
 
   static func locoSpdP1(slotNumber: UInt8, speed: UInt8) -> SGLocoNetMessage? {
     guard slotRange ~= slotNumber && (0 ... 127) ~= speed else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoSpd.rawValue, slotNumber, speed])
+    return SGLocoNetMessage(.opcLocoSpd, data: [slotNumber, speed])
   }
   
   static func locoSpdDirP2(slotBank: UInt8, slotNumber: UInt8, speed: UInt8, direction: SGLocoNetLocomotiveDirection, throttleID: UInt16) -> SGLocoNetMessage? {
     guard slotBankRange ~= slotBank && slotRange ~= slotNumber && (0 ... 127) ~= speed else {
       return nil
     }
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | (direction == .reverse ? 0b00001000 : 0), slotNumber, UInt8(throttleID & 0x7f), speed])
+    return SGLocoNetMessage(.opcD5Group, data: [slotBank | (direction == .reverse ? 0b00001000 : 0), slotNumber, UInt8(throttleID & 0x7f), speed])
   }
 
   static func locoDirF0F4P1(slotNumber: UInt8, direction:SGLocoNetLocomotiveDirection, functions: SGFunctionGroup) -> SGLocoNetMessage? {
@@ -246,7 +268,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
     
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoDirF.rawValue, slotNumber, dirf])
+    return SGLocoNetMessage(.opcLocoDirF, data: [slotNumber, dirf])
 
   }
 
@@ -264,7 +286,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
 
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcLocoSnd.rawValue, slotNumber, fnx])
+    return SGLocoNetMessage(.opcLocoSnd, data: [slotNumber, fnx])
 
   }
   
@@ -284,7 +306,7 @@ public extension SGLocoNetMessage {
     fnx |= functions.get(index: 5) ? 0b00100000 : 0
     fnx |= functions.get(index: 6) ? 0b01000000 : 0
 
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | 0b00010000, slotNumber, UInt8(throttleID & 0x7f), fnx])
+    return SGLocoNetMessage(.opcD5Group, data: [slotBank | 0b00010000, slotNumber, UInt8(throttleID & 0x7f), fnx])
 
   }
   
@@ -303,7 +325,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
     
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | 0b00011000, slotNumber, UInt8(throttleID & 0x7f), fnx])
+    return SGLocoNetMessage(.opcD5Group, data: [slotBank | 0b00011000, slotNumber, UInt8(throttleID & 0x7f), fnx])
 
   }
   
@@ -322,7 +344,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
 
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | 0b00100000, slotNumber, UInt8(throttleID & 0x7f), fnx])
+    return SGLocoNetMessage(.opcD5Group, data: [slotBank | 0b00100000, slotNumber, UInt8(throttleID & 0x7f), fnx])
 
   }
   
@@ -341,7 +363,7 @@ public extension SGLocoNetMessage {
       mask <<= 1
     }
 
-    return SGLocoNetMessage(data: [SGLocoNetOpcode.opcD5Group.rawValue, slotBank | UInt8(functions.get(index: 28) ? 0b00110000 : 0b00101000), slotNumber, UInt8(throttleID & 0x7f), fnx])
+    return SGLocoNetMessage(.opcD5Group, data: [slotBank | UInt8(functions.get(index: 28) ? 0b00110000 : 0b00101000), slotNumber, UInt8(throttleID & 0x7f), fnx])
 
   }
   
@@ -505,7 +527,163 @@ public extension SGLocoNetMessage {
     return nil
         
   }
+  
+  // MARK: Switch Commands
+
+  func setSw(switchNumber: UInt16, state:SGLocoNetSwitchState) -> SGLocoNetMessage? {
+    
+    guard SGLocoNetMessage.locoNetSwitchAddressRange ~= switchNumber else {
+      return nil
+    }
+    
+    let sn = switchNumber - 1
+    
+    return SGLocoNetMessage(.opcSwReq, data: [UInt8(sn & 0x7f), UInt8(sn >> 7) | state.setMask])
+    
+  }
+  
+  func setSwWithAck(switchNumber: UInt16, state:SGLocoNetSwitchState) -> SGLocoNetMessage? {
+    
+    guard SGLocoNetMessage.locoNetSwitchAddressRange ~= switchNumber else {
+      return nil
+    }
+    
+    let sn = switchNumber - 1
+
+    return SGLocoNetMessage(.opcSwAck, data: [UInt8(sn & 0x7f), UInt8(sn >> 7) | state.setMask])
+
+  }
+
+  func getSwState(switchNumber: UInt16) -> SGLocoNetMessage? {
+    
+    guard SGLocoNetMessage.locoNetSwitchAddressRange ~= switchNumber else {
+      return nil
+    }
+    
+    let sn = switchNumber - 1
+
+    return SGLocoNetMessage(.opcSwState, data: [UInt8(sn & 0x7f), UInt8(sn >> 7)])
+
+  }
+  
+  // MARK: Acks
+  
+  func ack(opCode:SGLocoNetOpcode, status:UInt8) -> SGLocoNetMessage? {
+    return SGLocoNetMessage(.opcLongAck, data: [opCode.rawValue & 0x7f, status])
+  }
+  
+  func setSwAccepted() -> SGLocoNetMessage? {
+    return ack(opCode: .opcSwReq, status: 0x7f)
+  }
+
+  func setSwRejected() -> SGLocoNetMessage? {
+    return ack(opCode: .opcSwReq, status: 0x00)
+  }
+
+  func setSwWithAckAccepted() -> SGLocoNetMessage? {
+    return ack(opCode: .opcSwAck, status: 0x7f)
+  }
+
+  func setSwWithAckRejected() -> SGLocoNetMessage? {
+    return ack(opCode: .opcSwAck, status: 0x00)
+  }
+
+  // MARK: IPL
+
+  func iplDiscover(productCode:SGDigitraxProductCode = .allProducts) -> SGLocoNetMessage? {
+    return SGLocoNetMessage(.opcPeerXfer, data: [0x14, 0x0f, 0x08, 0x00, productCode.rawValue, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+  }
+  
+  func getInterfaceData() -> SGLocoNetMessage? {
+    return SGLocoNetMessage(.opcBusy)
+  }
+  
+  // MARK: Tetherless Commands
+  
+  func findReceiver() -> SGLocoNetMessage? {
+    return SGLocoNetMessage(.opcDFGroup, data: [0x00, 0x00, 0x00, 0x00])
+  }
+
+  func setLocoNetID(locoNetID: UInt8) -> SGLocoNetMessage? {
+    guard SGLocoNetMessage.locoNetIDRange ~= locoNetID else {
+      return nil
+    }
+    return SGLocoNetMessage(.opcDFGroup, data: [0x40, 0x1f, locoNetID, 0x00])
+  }
+  
+  func getDuplexData() -> SGLocoNetMessage? {
+    return SGLocoNetMessage(.opcPeerXfer, data: [0x14, 0x03, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+  }
+  
+  func setDuplexGroupData(groupName: String, duplexGroupChannel: UInt8 = 0, duplexGroupID: UInt8 = 0) -> SGLocoNetMessage? {
+    
+    var name = groupName.prefix(8).data(using: .utf8)!
+    name.append(contentsOf: [UInt8](repeating: 0x20, count: 8 - name.count))
+    
+    var data : [UInt8] = [0x14, 0x03, 0x00, 0x00, name[0], name[1], name[2], name[3], 0, name[4], name[5], name[6], name[7], 0, 0x00, 0x00, duplexGroupChannel, duplexGroupID]
+    
+    if let encoded = SGLocoNetMessage.encodePeerXfer(data: data, numberOfGroups: 3, startOfFirstGroup: 3) {
+      return SGLocoNetMessage(.opcPeerXfer, data: encoded)
+    }
+    
+    return nil
+    
+  }
+  
+  func getDuplexSignalStrength(duplexGroupChannel: Int) -> SGLocoNetMessage? {
+    return SGLocoNetMessage(.opcPeerXfer, data: [0x14, 0x10, 0x08, 0x00, UInt8(duplexGroupChannel & 0x7f), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+  }
+  
 
   
+  func setDuplexChannelNumber(channelNumber: Int) -> SGLocoNetMessage? {
+    
+    let cn = UInt8(channelNumber)
+    
+    let pxct1 : UInt8 = (cn & 0b10000000) == 0b10000000 ? 0b00000001 : 0
+    
+    return SGLocoNetMessage(.opcPeerXfer, data: [0x14, 0x02, 0x00, pxct1, cn, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    
+  }
+  
+  func setDuplexGroupID(groupID: Int) -> SGLocoNetMessage? {
+    
+    let gid = UInt8(groupID)
+    
+    let pxct1 : UInt8 = (gid & 0b10000000) == 0b10000000 ? 0b00000001 : 0
+    
+    return SGLocoNetMessage(.opcPeerXfer, data: [0x14, 0x04, 0x00, pxct1, gid, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    
+  }
+  
+  func getDuplexGroupID() -> SGLocoNetMessage? {
+    return SGLocoNetMessage(.opcPeerXfer, data: [0x14, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+  }
+  
+  func setDuplexSignalStrength(duplexGroupChannel: Int, signalStrength:Int) -> SGLocoNetMessage? {
+    
+    var pxct1 : UInt8 = 0
+    pxct1 |= ((duplexGroupChannel & 0b10000000) == 0b10000000) ? 0b00000001 : 0
+    pxct1 |= ((signalStrength     & 0b10000000) == 0b10000000) ? 0b00000010 : 0
+
+    return SGLocoNetMessage(.opcPeerXfer, data: [0x14, 0x10, 0x10, pxct1, UInt8(duplexGroupChannel & 0x7f), UInt8(signalStrength & 0x7f), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    
+  }
+  
+  func setDuplexPassword(password: String) -> SGLocoNetMessage? {
+    
+    let data = String((password + "0000").prefix(4)).data(using: .ascii)!
+    
+    var pxct1 : UInt8 = 0
+    
+    pxct1 |= (data[0] & 0b10000000) == 0b10000000 ? 0b00000001 : 0
+    pxct1 |= (data[1] & 0b10000000) == 0b10000000 ? 0b00000010 : 0
+    pxct1 |= (data[2] & 0b10000000) == 0b10000000 ? 0b00000100 : 0
+    pxct1 |= (data[3] & 0b10000000) == 0b10000000 ? 0b00001000 : 0
+
+    return SGLocoNetMessage(.opcPeerXfer, data: [0x14, 0x07, 0x00, pxct1, data[0] & 0x7f, data[1] & 0x7f, data[2] & 0x7f, data[3] & 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    
+  }
+
 }
 

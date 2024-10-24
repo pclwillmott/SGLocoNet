@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// SGLocoNetSlotConsistState.swift
+// SGLocoNetReceiverType.swift
 //
 // This Swift source file is a part of the SGLocoNet package
 // by Paul C. L. Willmott.
@@ -27,42 +27,33 @@
 //
 // Revision History:
 //
-//     20/09/2024  Paul Willmott - SGLocoNetSlotConsistState.swift created
+//     24/10/2024  Paul Willmott - SGLocoNetReceiverType.swift created
 // -----------------------------------------------------------------------------
 
 import Foundation
 
-public enum SGLocoNetSlotConsistState : UInt8, CaseIterable, Sendable {
+public enum SGLocoNetReceiverType : UInt8, CaseIterable, Sendable {
   
   // MARK: Enumeration
   
-  case notLinked  = 0b00000000
-  case subMember  = 0b01000000
-  case topMember  = 0b00001000
-  case midConsist = 0b01001000
+  case ur90 = 0x17
+  case ur91 = 0x1f
+  case ur92 = 0x12
+  case ur93 = 0x22
 
   // MARK: Public Properties
   
   public var title : String {
-    return SGLocoNetSlotConsistState.titles[self]!
+    return SGLocoNetReceiverType.titles[self]!
   }
   
-  public var setMask : UInt8 {
-    return self.rawValue
-  }
+  // MARK: Private static Properties
   
-  // MARK: Private Class Properties
-  
-  private static let titles : [SGLocoNetSlotConsistState:String] = [
-    .notLinked  : String(localized: "Not Linked"),
-    .subMember  : String(localized: "Sub-Member"),
-    .topMember  : String(localized: "Top-Member"),
-    .midConsist : String(localized: "Mid-Consist"),
+  private static let titles : [SGLocoNetReceiverType:String] = [
+    .ur90: String(localized: "UR90"),
+    .ur91: String(localized: "UR91"),
+    .ur92: String(localized: "UR92"),
+    .ur93: String(localized: "UR93"),
   ]
   
-  // MARK: Public class Properties
-  
-  public static let protectMask : UInt8 = 0b10110111
-
 }
-

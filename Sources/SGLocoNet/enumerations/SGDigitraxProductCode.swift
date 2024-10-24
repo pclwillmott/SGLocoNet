@@ -36,33 +36,34 @@ public enum SGDigitraxProductCode : UInt8, CaseIterable, Sendable {
   
   // MARK: Enumeration
   
-  case lnrp       = 0x01
-  case ut4        = 0x04
-  case ut6        = 0x06
-  case wtl12      = 0x0c
-  case db210Opto  = 0x14
-  case db210      = 0x15
-  case db220      = 0x16
-  case dcs210Plus = 0x1a
-  case dcs210     = 0x1b
-  case dcs240     = 0x1c
-  case dcs240Plus = 0x1d
-  case pr3        = 0x23
-  case pr4        = 0x24
-  case dt402      = 0x2a
-  case dt500      = 0x32
-  case dcs51      = 0x33
-  case dcs52      = 0x34
-  case dt602      = 0x3e
-  case se74       = 0x46
-  case pm74       = 0x4a
-  case bxpa1      = 0x51
-  case bxp88      = 0x58
-  case lnwi       = 0x63
-  case ur92       = 0x5c
-  case ur93       = 0x5d
-  case ds74       = 0x74
-  case ds78V      = 0x7c
+  case allProducts = 0x00
+  case lnrp        = 0x01
+  case ut4         = 0x04
+  case ut6         = 0x06
+  case wtl12       = 0x0c
+  case db210Opto   = 0x14
+  case db210       = 0x15
+  case db220       = 0x16
+  case dcs210Plus  = 0x1a
+  case dcs210      = 0x1b
+  case dcs240      = 0x1c
+  case dcs240Plus  = 0x1d
+  case pr3         = 0x23
+  case pr4         = 0x24
+  case dt402       = 0x2a
+  case dt500       = 0x32
+  case dcs51       = 0x33
+  case dcs52       = 0x34
+  case dt602       = 0x3e
+  case se74        = 0x46
+  case pm74        = 0x4a
+  case bxpa1       = 0x51
+  case bxp88       = 0x58
+  case lnwi        = 0x63
+  case ur92        = 0x5c
+  case ur93        = 0x5d
+  case ds74        = 0x74
+  case ds78V       = 0x7c
   
   // MARK: Public Properties
   
@@ -73,33 +74,34 @@ public enum SGDigitraxProductCode : UInt8, CaseIterable, Sendable {
   // MARK: Private Class Properties
   
   private static let titles : [SGDigitraxProductCode:String] = [
-    .lnrp       : String(localized: "LNRP"),
-    .ut4        : String(localized: "UT4"),
-    .ut6        : String(localized: "UT6"),
-    .wtl12      : String(localized: "WTL12"),
-    .db210Opto  : String(localized: "DB210 Opto"),
-    .db210      : String(localized: "DB210"),
-    .db220      : String(localized: "DB220"),
-    .dcs210Plus : String(localized: "DCS210+"),
-    .dcs210     : String(localized: "DCS210"),
-    .dcs240     : String(localized: "DCS240"),
-    .dcs240Plus : String(localized: "DCS240+"),
-    .pr3        : String(localized: "PR3"),
-    .pr4        : String(localized: "PR4"),
-    .dt402      : String(localized: "DT402"),
-    .dt500      : String(localized: "DT500"),
-    .dcs51      : String(localized: "DCS51"),
-    .dcs52      : String(localized: "DCS52"),
-    .dt602      : String(localized: "DT602"),
-    .se74       : String(localized: "SE74"),
-    .pm74       : String(localized: "PM74"),
-    .bxpa1      : String(localized: "BXPA1"),
-    .bxp88      : String(localized: "BXP88"),
-    .lnwi       : String(localized: "LNWI"),
-    .ur92       : String(localized: "UR92"),
-    .ur93       : String(localized: "UR93"),
-    .ds74       : String(localized: "DS74"),
-    .ds78V      : String(localized: "DS78V"),
+    .allProducts : String(localized: "All Products"),
+    .lnrp        : String(localized: "LNRP"),
+    .ut4         : String(localized: "UT4"),
+    .ut6         : String(localized: "UT6"),
+    .wtl12       : String(localized: "WTL12"),
+    .db210Opto   : String(localized: "DB210 Opto"),
+    .db210       : String(localized: "DB210"),
+    .db220       : String(localized: "DB220"),
+    .dcs210Plus  : String(localized: "DCS210+"),
+    .dcs210      : String(localized: "DCS210"),
+    .dcs240      : String(localized: "DCS240"),
+    .dcs240Plus  : String(localized: "DCS240+"),
+    .pr3         : String(localized: "PR3"),
+    .pr4         : String(localized: "PR4"),
+    .dt402       : String(localized: "DT402"),
+    .dt500       : String(localized: "DT500"),
+    .dcs51       : String(localized: "DCS51"),
+    .dcs52       : String(localized: "DCS52"),
+    .dt602       : String(localized: "DT602"),
+    .se74        : String(localized: "SE74"),
+    .pm74        : String(localized: "PM74"),
+    .bxpa1       : String(localized: "BXPA1"),
+    .bxp88       : String(localized: "BXP88"),
+    .lnwi        : String(localized: "LNWI"),
+    .ur92        : String(localized: "UR92"),
+    .ur93        : String(localized: "UR93"),
+    .ds74        : String(localized: "DS74"),
+    .ds78V       : String(localized: "DS78V"),
   ]
   
 }

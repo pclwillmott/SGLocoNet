@@ -37,27 +37,27 @@ public class SGLocoNetMessage : NSObject {
   
   // MARK: Constructors
   
-  public init(data:[UInt8]) {
-    message = data
+  public init(_ opCode:SGLocoNetOpcode, data:[UInt8] = []) {
+    _opCode = opCode.rawValue
+    _data = data
     super.init()
   }
 
-  public init?(dataWithCheckSum data:[UInt8]) {
-    guard SGLocoNetMessage.isCheckSumOK(message: data) else {
+  public init?(messageWithCheckSum message:[UInt8]) {
+    guard SGLocoNetMessage.isCheckSumOK(message: message) else {
       return nil
     }
-    message = data
-    message.removeLast()
+    _opCode = message[0]
+    _data = message
+    _data.removeFirst()
+    _data.removeLast()
     super.init()
   }
 
   public init(message: SGLocoNetMessage) {
-    self.message = message.message
+    self._opCode = message._opCode
+    self._data = message._data
     super.init()
-  }
-  
-  deinit {
-    message.removeAll()
   }
   
   // MARK: Private Properties
@@ -66,9 +66,17 @@ public class SGLocoNetMessage : NSObject {
   
   private var _functions : SGFunctionGroup?
   
+  internal var _opCode : UInt8
+  
+  internal var _data : [UInt8]
+  
   // MARK: Public Properties
   
-  public var message : [UInt8]
+  public var message : [UInt8] {
+    var message = [_opCode]
+    message.append(contentsOf: _data)
+    return message
+  }
   
   public var messageWithChecksum : [UInt8] {
     var data = message
@@ -77,14 +85,14 @@ public class SGLocoNetMessage : NSObject {
   }
   
   public var opCode : SGLocoNetOpcode {
-    return SGLocoNetOpcode(rawValue: message[0]) ?? .opcUnknown
+    return SGLocoNetOpcode(rawValue: _opCode) ?? .opcUnknown
   }
   
   public var messageLength : UInt8 {
       
     var length : UInt8
     
-    switch (message[0] & 0b01100000) >> 5 {
+    switch (_opCode & 0b01100000) >> 5 {
     case 0b00 :
       length = 2
     case 0b01 :
@@ -92,7 +100,7 @@ public class SGLocoNetMessage : NSObject {
     case 0b10 :
       length = 6
     default :
-      length = message[1] == 0 ? 128 : message[1]
+      length = _data[0] == 0 ? 128 : _data[0]
     }
     
     return length
@@ -102,17 +110,7 @@ public class SGLocoNetMessage : NSObject {
   public var timeStamp : TimeInterval = 0.0
   
   public var timeSinceLastMessage : TimeInterval = 0.0
-  
-  public var slotData : [UInt8] {
-    var slotData : [UInt8] = []
-    if messageType == .locoSlotDataP1 || messageType == .locoSlotDataP2 {
-      for index in 2 ..< Int(messageLength) - 3 {
-        slotData.append(message[index])
-      }
-    }
-    return slotData
-  }
-  
+
   public var hex : String {
     var str : String = ""
     for byte in message {
@@ -130,7 +128,7 @@ public class SGLocoNetMessage : NSObject {
       return nil
     }
     
-    return SGLocoNetIMMPacketRepeat(rawValue: message[3] & 0b00001111)
+    return SGLocoNetIMMPacketRepeat(rawValue: _data[2] & 0b00001111)
     
   }
   
@@ -144,11 +142,11 @@ public class SGLocoNetMessage : NSObject {
     
     var mask : UInt8 = 1
     
-    let count = Int((message[3] & 0b01110000) >> 4)
+    let count = Int((_data[2] & 0b01110000) >> 4)
     
     for i in 0 ..< count {
-      var im : UInt8 = message[5 + i]
-      im |= ((message[4] & mask) != 0) ? 0x80 : 0x00
+      var im : UInt8 = _data[4 + i]
+      im |= ((_data[3] & mask) != 0) ? 0x80 : 0x00
       packet.append(im)
       mask <<= 1
     }
@@ -171,7 +169,7 @@ public class SGLocoNetMessage : NSObject {
       switch opCode {
       case .opcSlRdDdata, .opcWrSlData:
         let mask : UInt8 = 0b01000000
-        return (message[7] & mask) != 0
+        return (_data[6] & mask) != 0
       default:
         return nil
       }
@@ -181,8 +179,8 @@ public class SGLocoNetMessage : NSObject {
       switch opCode {
       case .opcSlRdDdata, .opcWrSlData:
         let mask : UInt8 = 0b01000000
-        message[7] &= ~mask
-        message[7] |= value! ? mask : 0
+        _data[6] &= ~mask
+        _data[6] |= value! ? mask : 0
       default:
         break
       }
@@ -196,7 +194,7 @@ public class SGLocoNetMessage : NSObject {
       switch opCode {
       case .opcSlRdDdata, .opcWrSlData:
         let mask : UInt8 = 0b00000100
-        return (message[7] & mask) != 0
+        return (_data[6] & mask) != 0
       default:
         return nil
       }
@@ -206,8 +204,8 @@ public class SGLocoNetMessage : NSObject {
       switch opCode {
       case .opcSlRdDdata, .opcWrSlData:
         let mask : UInt8 = 0b00000100
-        message[7] &= ~mask
-        message[7] |= value! ? mask : 0
+        _data[6] &= ~mask
+        _data[6] |= value! ? mask : 0
       default:
         break
       }
@@ -221,7 +219,7 @@ public class SGLocoNetMessage : NSObject {
       switch opCode {
       case .opcSlRdDdata, .opcWrSlData:
         let mask : UInt8 = 0b00001000
-        return (message[7] & mask) != 0
+        return (_data[6] & mask) != 0
       default:
         return nil
       }
@@ -231,8 +229,8 @@ public class SGLocoNetMessage : NSObject {
       switch opCode {
       case .opcSlRdDdata, .opcWrSlData:
         let mask : UInt8 = 0b00001000
-        message[7] &= ~mask
-        message[7] |= value! ? mask : 0
+        _data[6] &= ~mask
+        _data[6] |= value! ? mask : 0
       default:
         break
       }
@@ -246,7 +244,7 @@ public class SGLocoNetMessage : NSObject {
       switch opCode {
       case .opcSlRdDdata, .opcWrSlData:
         let mask : UInt8 = 0b00000010
-        return (message[7] & mask) != 0
+        return (_data[6] & mask) != 0
       default:
         return nil
       }
@@ -256,8 +254,8 @@ public class SGLocoNetMessage : NSObject {
       switch opCode {
       case .opcSlRdDdata, .opcWrSlData:
         let mask : UInt8 = 0b00000010
-        message[7] &= ~mask
-        message[7] |= value! ? mask : 0
+        _data[6] &= ~mask
+        _data[6] |= value! ? mask : 0
       default:
         break
       }
@@ -271,7 +269,7 @@ public class SGLocoNetMessage : NSObject {
       switch opCode {
       case .opcSlRdDdata, .opcWrSlData:
         let mask : UInt8 = 0b00000001
-        return (message[7] & mask) != 0
+        return (_data[6] & mask) != 0
       default:
         return nil
       }
@@ -281,8 +279,8 @@ public class SGLocoNetMessage : NSObject {
       switch opCode {
       case .opcSlRdDdata, .opcWrSlData:
         let mask : UInt8 = 0b00000001
-        message[7] &= ~mask
-        message[7] |= value! ? mask : 0
+        _data[6] &= ~mask
+        _data[6] |= value! ? mask : 0
       default:
         break
       }
@@ -295,7 +293,7 @@ public class SGLocoNetMessage : NSObject {
     get {
       switch messageType {
       case .opSwDataAP1:
-        if let cs = SGDigitraxCommandStationType(rawValue: message[11]) {
+        if let cs = SGDigitraxCommandStationType(rawValue: _data[10]) {
           return cs
         }
         else if let isP1Implemented, !isP1Implemented {
@@ -315,10 +313,10 @@ public class SGLocoNetMessage : NSObject {
       case .opSwDataAP1:
         switch value {
         case .dt200:
-          message[11] = 0
+          _data[10] = 0
           isP1Implemented = false
         default:
-          message[11] = value.rawValue
+          _data[10] = value.rawValue
         }
       default:
         break
@@ -437,18 +435,6 @@ public class SGLocoNetMessage : NSObject {
     return nil
     
   }
-  
-  public var swState : DCCSwitchState? {
-    switch messageType {
-    case .swState:
-      return (message[2] & 0b00110000) == 0b00110000 ? .closed : .thrown
-    case .brdOpSwState:
-      return (message[2] & 0b00110000) == 0b00110000 ? .closed : .thrown
-    default:
-      return nil
-    }
-  }
-  
   public var dccAddressPartition : DCCAddressPartition? {
     
     guard let packet = dccPacket else {
@@ -518,24 +504,41 @@ public class SGLocoNetMessage : NSObject {
   }
   
   public var locomotiveAddress : UInt16? {
-    switch messageType {
-    case .locoRep:
-      let highBits = message[3] == 0x7d ? 0 : UInt16(message[3]) << 7
-      return UInt16(message[4]) | highBits
-    case .locoSlotDataP1:
-      var address = UInt16(message[4])
-      if message[9] != 0x7f {
-        address |= UInt16(message[9]) << 7
+    get {
+      switch messageType {
+      case .locoRep:
+        let highBits = message[3] == 0x7d ? 0 : UInt16(message[3]) << 7
+        return UInt16(message[4]) | highBits
+      case .locoSlotDataP1:
+        var address = UInt16(message[4])
+        if message[9] != 0x7f {
+          address |= UInt16(message[9]) << 7
+        }
+        return address
+      case .transRep:
+        return UInt16(message[4]) | (UInt16(message[3]) << 7)
+      case .locoSlotDataP2:
+        return UInt16(message[5]) | (UInt16(message[6]) << 7)
+      case .getLocoSlotDataAdrP1, .getLocoSlotDataAdrP2:
+        return UInt16(message[2]) | (UInt16(message[1]) << 7)
+      default:
+        return nil
       }
-      return address
-    case .transRep:
-      return UInt16(message[4]) | (UInt16(message[3]) << 7)
-    case .locoSlotDataP2:
-      return UInt16(message[5]) | (UInt16(message[6]) << 7)
-    case .getLocoSlotDataAdrP1, .getLocoSlotDataAdrP2:
-      return UInt16(message[2]) | (UInt16(message[1]) << 7)
-    default:
-      return nil
+    }
+    set(value) {
+      guard let value, SGLocoNetMessage.locoNetAddressRange ~= value else {
+        return
+      }
+      switch messageType {
+      case .locoSlotDataP1, .setLocoSlotDataP1:
+        _data[3] = UInt8(value & 0x7f)
+        _data[8] = UInt8(value >> 7)
+      case .locoSlotDataP2, .setLocoSlotDataP2:
+        _data[4] = UInt8(value & 0x7f)
+        _data[5] = UInt8(value >> 7)
+      default:
+        break
+      }
     }
   }
 
@@ -671,14 +674,23 @@ public class SGLocoNetMessage : NSObject {
     return nil
   }
   
-  public var switchAddress : Int? {
+  public var switchAddress : UInt16? {
     switch messageType {
-    case .setSw, .setSwWithAck:
-      return Int(message[1]) | (Int(message[2] & 0x0f) << 7) + 1
+    case .setSw, .setSwWithAck, .getSwState:
+      return UInt16(_data[0]) | (UInt16(_data[1] & 0x0f) << 7) + 1
     default:
       break
     }
     return nil
+  }
+  
+  public var switchState : SGLocoNetSwitchState? {
+    switch messageType {
+    case .swState, .brdOpSwState, .setSw, .setSwWithAck:
+      return SGLocoNetSwitchState(rawValue: _data[1] & ~SGLocoNetSwitchState.protectMask)
+    default:
+      return nil
+    }
   }
   
   public var sensorState : Bool? {
@@ -1152,38 +1164,77 @@ public class SGLocoNetMessage : NSObject {
   }
   
   public var slotStatus1 : UInt8? {
-    switch messageType {
-    case .locoSlotDataP1:
-      return message[3]
-    case .locoSlotDataP2, .setLocoSlotStat1P2:
-      return message[4]
-    case .setLocoSlotStat1P1:
-      return message[2]
-    default:
-      break
+    get {
+      switch messageType {
+      case .locoSlotDataP1, .setLocoSlotDataP1:
+        return _data[2]
+      case .locoSlotDataP2, .setLocoSlotDataP2, .setLocoSlotStat1P2:
+        return _data[3]
+      case .setLocoSlotStat1P1:
+        return _data[1]
+      default:
+        break
+      }
+      return nil
     }
-    return nil
+    set(value) {
+      guard let value else {
+        return
+      }
+      switch messageType {
+      case .locoSlotDataP1, .setLocoSlotDataP1:
+        _data[2] = value
+      case .locoSlotDataP2, .setLocoSlotDataP2:
+        _data[3] = value
+      default:
+        break
+      }
+    }
   }
   
   public var slotState : SGLocoNetSlotState? {
-    guard let slotStatus1 else {
-      return nil
+    get {
+      guard let slotStatus1 else {
+        return nil
+      }
+      return SGLocoNetSlotState(rawValue: slotStatus1 & ~SGLocoNetSlotState.protectMask)
     }
-    return SGLocoNetSlotState(rawValue: slotStatus1 & ~SGLocoNetSlotState.protectMask)
+    set(value) {
+      guard let value, let slotStatus1 else {
+        return
+      }
+      self.slotStatus1 = (slotStatus1 & SGLocoNetSlotState.protectMask) | value.setMask
+    }
   }
   
   public var consistState : SGLocoNetSlotConsistState? {
-    guard let slotStatus1 else {
-      return nil
+    get {
+      guard let slotStatus1 else {
+        return nil
+      }
+      return SGLocoNetSlotConsistState(rawValue: slotStatus1 & ~SGLocoNetSlotConsistState.protectMask)
     }
-    return SGLocoNetSlotConsistState(rawValue: slotStatus1 & ~SGLocoNetSlotConsistState.protectMask)
+    set(value) {
+      guard let value, let slotStatus1 else {
+        return
+      }
+      self.slotStatus1 = (slotStatus1 & SGLocoNetSlotConsistState.protectMask) | value.setMask
+    }
   }
   
   public var decoderProtocol : SGLocoNetDecoderProtocol? {
-    guard let slotStatus1 else {
-      return nil
+    get {
+      guard let slotStatus1 else {
+        return nil
+      }
+      return SGLocoNetDecoderProtocol(rawValue: slotStatus1 & ~SGLocoNetDecoderProtocol.protectMask)
     }
-    return SGLocoNetDecoderProtocol(rawValue: slotStatus1 & ~SGLocoNetDecoderProtocol.protectMask)
+    set(value) {
+      guard let value, let slotStatus1 else {
+        return
+      }
+      self.slotStatus1 = (slotStatus1 & SGLocoNetDecoderProtocol.protectMask) | value.setMask
+    }
   }
 
   public var direction : SGLocoNetLocomotiveDirection?   {
@@ -1374,30 +1425,85 @@ public class SGLocoNetMessage : NSObject {
     
   }
   
+  public var receiverType : SGLocoNetReceiverType? {
+    switch messageType {
+    case .receiverRep:
+      return SGLocoNetReceiverType(rawValue: _data[0])
+    default:
+      return nil
+    }
+  }
+  
+  public var locoNetID : UInt8? {
+    switch messageType {
+    case .receiverRep, .setLocoNetID:
+      return _data[2] & 0x0f
+    default:
+      return nil
+    }
+  }
+
+  public var isDuplex : Bool? {
+    switch messageType {
+    case .receiverRep:
+      return (_data[2] & 0b00001000) != 0
+    default:
+      return nil
+    }
+  }
+
   public var groupName : String? {
     switch messageType {
     case .duplexGroupData:
       
-      var data : [UInt8] = []
+      if let decoded = decodePeerXfer(numberOfGroups: 3, startOfFirstGroup: 3) {
+        
+        var data : [UInt8] = []
+        
+        for index in 4 ... 7 {
+          data.append(decoded[index])
+        }
+        for index in 9 ... 12 {
+          data.append(decoded[index])
+        }
+        
+        return String(bytes: data, encoding: String.Encoding.utf8)!
+        
+      }
       
-      data.append(message[5] | ((message[4] & 0b00000001) == 0b00000001 ? 0x80 : 0x00))
-      data.append(message[6] | ((message[4] & 0b00000010) == 0b00000010 ? 0x80 : 0x00))
-      data.append(message[7] | ((message[4] & 0b00000100) == 0b00000100 ? 0x80 : 0x00))
-      data.append(message[8] | ((message[4] & 0b00001000) == 0b00001000 ? 0x80 : 0x00))
+    default:
+      break
+    }
+    
+    return nil
+    
+  }
+  
+  public var channelNumber : UInt8? {
+    switch messageType {
+    case .duplexGroupData:
+      if let decoded = decodePeerXfer(numberOfGroups: 3, startOfFirstGroup: 3) {
+        return decoded[16]
+      }
 
-      data.append(message[10] | ((message[9] & 0b00000001) == 0b00000001 ? 0x80 : 0x00))
-      data.append(message[11] | ((message[9] & 0b00000010) == 0b00000010 ? 0x80 : 0x00))
-      data.append(message[12] | ((message[9] & 0b00000100) == 0b00000100 ? 0x80 : 0x00))
-      data.append(message[13] | ((message[9] & 0b00001000) == 0b00001000 ? 0x80 : 0x00))
-
-      return String(bytes: data, encoding: String.Encoding.utf8)!
-      
     default:
       break
     }
     return nil
   }
   
+  public var groupID : UInt8? {
+    switch messageType {
+    case .duplexGroupData:
+      if let decoded = decodePeerXfer(numberOfGroups: 3, startOfFirstGroup: 3) {
+        return decoded[17]
+      }
+    default:
+      break
+    }
+    return nil
+  }
+
   public var groupPassword : String? {
     switch messageType {
     case .duplexGroupData:
@@ -1412,26 +1518,6 @@ public class SGLocoNetMessage : NSObject {
 
       return String(format: "%01X%01X%01X%01X", char1, char2, char3, char4)
 
-    default:
-      break
-    }
-    return nil
-  }
-
-  public var channelNumber : Int? {
-    switch messageType {
-    case .duplexGroupData:
-      return Int(message[17])
-    default:
-      break
-    }
-    return nil
-  }
-  
-  public var groupID : Int? {
-    switch messageType {
-    case .duplexGroupData:
-      return Int(message[18])
     default:
       break
     }
@@ -2519,29 +2605,51 @@ public class SGLocoNetMessage : NSObject {
         return
       }
       let index = opSwNumber - 1
-      let byte = index / 8 + (index < 4 ? 3 : 4)
+      let byte = index / 8 + (index < 4 ? 2 : 3)
       let bit = index % 8
       let mask : UInt8 = (bit == 7) ? 0 : (1 << bit)
-      message[byte] &= ~mask
-      message[byte] |=  opSwState ? mask : 0
+      _data[byte] &= ~mask
+      _data[byte] |=  opSwState ? mask : 0
     case .opSwDataBP1:
       guard (65 ... 128) ~= opSwNumber else {
         return
       }
       let index = opSwNumber - 65
-      let byte = index / 8 + (index < 4 ? 3 : 4)
+      let byte = index / 8 + (index < 4 ? 2 : 3)
       let bit = index % 8
       let mask : UInt8 = (bit == 7) ? 0 : (1 << bit)
-      message[byte] &= ~mask
-      message[byte] |=  opSwState ? mask : 0
+      _data[byte] &= ~mask
+      _data[byte] |=  opSwState ? mask : 0
     default:
       break
     }
+  }
+  
+  public func decodePeerXfer(numberOfGroups:Int, startOfFirstGroup:Int) -> [UInt8]? {
+    var message = self._data
+    guard opCode == .opcPeerXfer, numberOfGroups * 5 <= message.count - startOfFirstGroup else {
+      return nil
+    }
+    var mask : UInt8
+    for group in 0 ..< numberOfGroups {
+      mask = 1
+      let offset = startOfFirstGroup + group * 5
+      for index in offset + 1 ... offset + 4 {
+        message[index] |= (message[offset] & mask) != 0 ? 0x80 : 0
+        mask <<= 1
+      }
+      message[offset] = 0
+    }
+    return message
   }
 
   // MARK: Public Static Properties
   
   public static let locoNetAddressRange = UInt16(1) ... UInt16(10239)
+  
+  public static let locoNetSwitchAddressRange = UInt16(1) ... UInt16(2044)
+  
+  public static let locoNetIDRange = UInt8(0) ... UInt8(7)
   
   public static let slotBankRange = UInt8(0) ... UInt8(3)
 
@@ -2565,6 +2673,27 @@ public class SGLocoNetMessage : NSObject {
     return cs == 0
   }
   
+  public static func encodePeerXfer(data:[UInt8], numberOfGroups:Int, startOfFirstGroup:Int) -> [UInt8]? {
+    var message = data
+    guard numberOfGroups * 5 <= message.count - startOfFirstGroup else {
+      return nil
+    }
+    var mask : UInt8
+    var bits : UInt8
+    for group in 0 ..< numberOfGroups {
+      mask = 1
+      let offset = startOfFirstGroup + group * 5
+      bits = 0
+      for index in offset + 1 ... offset + 4 {
+        bits |= (message[index] & mask) != 0 ? mask : 0
+        message[index] &= 0x7f
+        mask <<= 1
+      }
+      message[offset] = bits
+    }
+    return message
+  }
+
   // MARK: Operators
   
   public static func ==(lhs:SGLocoNetMessage, rhs:SGLocoNetMessage) -> Bool {

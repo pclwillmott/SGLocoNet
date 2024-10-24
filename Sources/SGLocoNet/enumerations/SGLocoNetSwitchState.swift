@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// SGLocoNetSlotConsistState.swift
+// SGLocoNetSwitchState.swift
 //
 // This Swift source file is a part of the SGLocoNet package
 // by Paul C. L. Willmott.
@@ -27,42 +27,37 @@
 //
 // Revision History:
 //
-//     20/09/2024  Paul Willmott - SGLocoNetSlotConsistState.swift created
+//     24/10/2024  Paul Willmott - SGLocoNetSwitchState.swift created
 // -----------------------------------------------------------------------------
 
 import Foundation
 
-public enum SGLocoNetSlotConsistState : UInt8, CaseIterable, Sendable {
+public enum SGLocoNetSwitchState : UInt8, CaseIterable, Sendable {
   
   // MARK: Enumeration
   
-  case notLinked  = 0b00000000
-  case subMember  = 0b01000000
-  case topMember  = 0b00001000
-  case midConsist = 0b01001000
-
+  case closed = 0b00110000
+  case thrown = 0b00010000
+  
   // MARK: Public Properties
   
   public var title : String {
-    return SGLocoNetSlotConsistState.titles[self]!
+    return SGLocoNetSwitchState.titles[self]!
   }
   
   public var setMask : UInt8 {
     return self.rawValue
   }
   
-  // MARK: Private Class Properties
+  // MARK: Private static Properties
   
-  private static let titles : [SGLocoNetSlotConsistState:String] = [
-    .notLinked  : String(localized: "Not Linked"),
-    .subMember  : String(localized: "Sub-Member"),
-    .topMember  : String(localized: "Top-Member"),
-    .midConsist : String(localized: "Mid-Consist"),
+  private static let titles : [SGLocoNetSwitchState:String] = [
+    .closed: String(localized: "Closed"),
+    .thrown: String(localized: "Thrown"),
   ]
   
-  // MARK: Public class Properties
+  // MARK: Public Static Properties
   
-  public static let protectMask : UInt8 = 0b10110111
-
+  public static let protectMask : UInt8 = 0b11001111
+  
 }
-

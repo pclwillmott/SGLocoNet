@@ -217,7 +217,7 @@ public class SGLocoNetInterface : NSObject   {
       // Process message if no high bits set in the message and the checksum
       // is OK.
         
-      if !restart, var locoNetMessage = SGLocoNetMessage(dataWithCheckSum: data) {
+      if !restart, var locoNetMessage = SGLocoNetMessage(messageWithCheckSum: data) {
         
         locoNetMessage.timeStamp = Date.timeIntervalSinceReferenceDate
         locoNetMessage.timeSinceLastMessage = locoNetMessage.timeStamp - lastTimeStamp
